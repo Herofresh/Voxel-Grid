@@ -36,6 +36,19 @@ export function createIOPanel({ state, onImported }) {
 	importStatus.style.fontSize = "12px";
 	importStatus.style.opacity = "0.85";
 
+	const clearBtn = h("button", { textContent: "Clear world" });
+	styleButton(clearBtn, "danger");
+	clearBtn.style.marginTop = "10px";
+	clearBtn.onclick = () => {
+		const ok = window.confirm(
+			"Clear all objects from the map? This cannot be undone.",
+		);
+		if (!ok) return;
+		state.objects = [];
+		importStatus.textContent = "World cleared.";
+		onImported?.();
+	};
+
 	importInput.onchange = () => {
 		const file = importInput.files?.[0];
 		if (!file) return;
@@ -59,6 +72,7 @@ export function createIOPanel({ state, onImported }) {
 		importLabel,
 		importInput,
 		importStatus,
+		clearBtn,
 	]);
 	return { el };
 }
