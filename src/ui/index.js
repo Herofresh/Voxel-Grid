@@ -49,7 +49,7 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 
 	const content = h("div");
 
-	// Panels / sub-panels
+	// Panels
 	const mapSizePanel = createMapSizePanel({
 		state,
 		onApply: () => {
@@ -99,7 +99,6 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 
 	// Tab containers
 	const tabObjects = h("div");
-	// Object list has its own scroll. Keep the tab itself non-scroll.
 	tabObjects.append(objectListPanel.el, divider(), addPanel.el);
 
 	const tabMap = h("div");
@@ -109,13 +108,12 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	tabFeatures.append(shufflePanel.el);
 
 	function setActive(tabName) {
-		// swap content
 		content.innerHTML = "";
+
 		if (tabName === "objects") content.appendChild(tabObjects);
 		if (tabName === "map") content.appendChild(tabMap);
 		if (tabName === "features") content.appendChild(tabFeatures);
 
-		// button styling
 		styleButton(
 			tabObjectsBtn,
 			tabName === "objects" ? "primary" : "neutral",
@@ -133,10 +131,16 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 
 	setActive("objects");
 
+	function openObjectById(id) {
+		setActive("objects");
+		objectListPanel.openObject(id);
+	}
+
 	root.append(title, tabRow, content);
 	document.body.appendChild(root);
 
 	return {
 		setPlacementPosition: addPanel.setPlacementPosition,
+		openObjectById,
 	};
 }

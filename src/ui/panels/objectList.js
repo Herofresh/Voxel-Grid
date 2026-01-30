@@ -76,7 +76,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 
 	// Scroll container (fixed height)
 	const scroll = h("div");
-	scroll.style.maxHeight = "min(340px, calc(100vh - 420px))";
+	scroll.style.maxHeight = "340px";
 	scroll.style.overflow = "auto";
 	scroll.style.paddingRight = "4px";
 
@@ -87,6 +87,9 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 	scroll.appendChild(list);
 
 	let expandedId = null;
+
+	// Map objectId -> DOM element so we can scroll programmatically
+	const cardById = new Map();
 
 	function rowMinimal(obj, bar) {
 		const row = h("div");
@@ -126,7 +129,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		return row;
 	}
 
-	function rowExpanded(obj, bar, card) {
+	function rowExpanded(obj, bar) {
 		const panel = h("div");
 		panel.style.marginTop = "10px";
 		panel.style.display = "flex";
@@ -166,7 +169,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 			obj.hp = cur;
 			bar.set(cur, max);
 			onChange?.();
-			refresh(); // keep label updated
+			refresh();
 		};
 
 		hpGrid.append(
@@ -320,6 +323,9 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		card.style.cursor = "pointer";
 		card.style.userSelect = "none";
 
+		card.dataset.objectId = obj.id;
+		cardById.set(obj.id, card);
+
 		const bar = makeHealthBar(obj.hp, obj.hpMax);
 		const minimal = rowMinimal(obj, bar);
 		card.appendChild(minimal);
@@ -327,13 +333,20 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		const isExpanded = expandedId === obj.id;
 		if (isExpanded) {
 			card.style.background = "rgba(255,255,255,0.085)";
-			card.appendChild(rowExpanded(obj, bar, card));
+			card.appendChild(rowExpanded(obj, bar));
 		}
 
 		card.onclick = (e) => {
-			// prevent clicking buttons inside from toggling twice
-			if (e.target?.tagName === "BUTTON" || e.target?.tagName === "INPUT")
+			// don't toggle when clicking interactive inputs/buttons
+			const tag = e.target?.tagName;
+			if (
+				tag === "BUTTON" ||
+				tag === "INPUT" ||
+				tag === "TEXTAREA" ||
+				tag === "SELECT"
+			)
 				return;
+
 			expandedId = expandedId === obj.id ? null : obj.id;
 			refresh();
 		};
@@ -343,6 +356,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 
 	function refresh() {
 		list.innerHTML = "";
+		cardById.clear();
 
 		const all = [...state.objects].sort(sortObjects);
 
@@ -369,10 +383,19 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		if (env.length) list.appendChild(renderGroup(kindLabel("env"), env));
 	}
 
+	function openObject(id) {
+		expandedId = id;
+		refresh();
+
+		// scroll after refresh (DOM exists now)
+		const el = cardById.get(id);
+		if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+	}
+
 	groupToggle.onchange = () => refresh();
 
 	refresh();
 
 	const el = h("div", {}, [header, controls, scroll]);
-	return { el, refresh };
+	return { el, refresh, openObject };
 }
