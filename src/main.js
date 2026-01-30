@@ -1,5 +1,4 @@
 // src/main.js
-
 import { state } from "./state.js";
 import { createSceneApp } from "./scene.js";
 import { mountUI } from "./ui.js";
@@ -15,7 +14,6 @@ const app = createSceneApp({
 app.renderFromState(state);
 
 ui = mountUI({
-	onChange: () => {
-		app.renderFromState(state);
-	},
+	onChange: () => app.renderFromState(state),
+	onModeChange: (isAdding) => app.setMode({ isAdding }),
 });

@@ -1,5 +1,4 @@
 // src/scene.js
-
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
@@ -12,17 +11,17 @@ const DEFAULTS = {
 };
 
 export function createSceneApp({ onCellClick } = {}) {
-	// ---- DOM setup ----
+	// -----------------------------
+	// DOM / renderers
+	// -----------------------------
 	document.body.style.margin = "0";
 	document.body.style.overflow = "hidden";
 
-	// WebGL renderer
 	const renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	document.body.appendChild(renderer.domElement);
 
-	// Label renderer
 	const labelRenderer = new CSS2DRenderer();
 	labelRenderer.setSize(window.innerWidth, window.innerHeight);
 	labelRenderer.domElement.style.position = "absolute";
@@ -31,7 +30,9 @@ export function createSceneApp({ onCellClick } = {}) {
 	labelRenderer.domElement.style.pointerEvents = "none";
 	document.body.appendChild(labelRenderer.domElement);
 
-	// ---- Scene / Camera ----
+	// -----------------------------
+	// Scene / camera / controls
+	// -----------------------------
 	const scene = new THREE.Scene();
 	scene.background = new THREE.Color(DEFAULTS.background);
 
@@ -43,38 +44,134 @@ export function createSceneApp({ onCellClick } = {}) {
 	);
 	camera.position.set(12, 12, 12);
 
-	// Controls
 	const controls = new OrbitControls(camera, renderer.domElement);
 	controls.enableDamping = true;
-	controls.target.set(0, 0, 0);
-	controls.update();
 
-	// Lights
 	scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 	const dir = new THREE.DirectionalLight(0xffffff, 0.8);
 	dir.position.set(10, 20, 10);
 	scene.add(dir);
 
-	// Helpers
 	scene.add(new THREE.AxesHelper(10));
-	const gridHelper = new THREE.GridHelper(50, 50, 0x334155, 0x1f2937);
-	gridHelper.position.y = -0.5;
-	scene.add(gridHelper);
 
-	// ---- Picking plane at y=0 (invisible) ----
-	// We'll raycast against this to get a world point, then convert to integer grid cell coords.
-	const groundPlaneGeo = new THREE.PlaneGeometry(2000, 2000);
-	const groundPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
-	const groundPlane = new THREE.Mesh(groundPlaneGeo, groundPlaneMat);
-	groundPlane.rotation.x = -Math.PI / 2; // make it horizontal
-	groundPlane.position.y = 0;
-	scene.add(groundPlane);
+	// -----------------------------
+	// Mode: view vs add
+	// -----------------------------
+	const mode = {
+		isAdding: false, // when true: disable hover labels
+	};
 
-	// ---- Hover tooltip label (single reusable) ----
+	function setMode(next) {
+		mode.isAdding = Boolean(next?.isAdding);
+		// cursor cube should always show (helps even in view),
+		// but you can choose to hide it in view if you want.
+	}
+
+	// -----------------------------
+	// Map size + map-aligned grid & picking plane
+	// -----------------------------
+	let mapSize = { sizeX: 6, sizeY: 4, sizeZ: 6 };
+
+	// Custom grid lines (so it aligns with integer-centered cells)
+	let gridLines = null;
+
+	function buildGridLines(sizeX, sizeZ) {
+		const verts = [];
+
+		const xMin = -0.5;
+		const xMax = sizeX - 0.5;
+		const zMin = -0.5;
+		const zMax = sizeZ - 0.5;
+		const y = -0.5; // under cubes slightly
+
+		// Lines parallel to Z (vary X)
+		for (let x = 0; x <= sizeX; x++) {
+			const xx = x - 0.5;
+			verts.push(xx, y, zMin, xx, y, zMax);
+		}
+
+		// Lines parallel to X (vary Z)
+		for (let z = 0; z <= sizeZ; z++) {
+			const zz = z - 0.5;
+			verts.push(xMin, y, zz, xMax, y, zz);
+		}
+
+		const geom = new THREE.BufferGeometry();
+		geom.setAttribute(
+			"position",
+			new THREE.Float32BufferAttribute(verts, 3),
+		);
+		const mat = new THREE.LineBasicMaterial({
+			color: 0x1f2937,
+			transparent: true,
+			opacity: 0.9,
+		});
+
+		return new THREE.LineSegments(geom, mat);
+	}
+
+	// Picking plane constrained to map footprint
+	const pickPlaneGeo = new THREE.PlaneGeometry(1, 1);
+	const pickPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
+	const pickPlane = new THREE.Mesh(pickPlaneGeo, pickPlaneMat);
+	pickPlane.rotation.x = -Math.PI / 2;
+	scene.add(pickPlane);
+
+	function setMapSize(next) {
+		mapSize = { ...mapSize, ...next };
+
+		// rebuild grid lines
+		if (gridLines) {
+			scene.remove(gridLines);
+			gridLines.geometry.dispose();
+			gridLines.material.dispose();
+		}
+		gridLines = buildGridLines(mapSize.sizeX, mapSize.sizeZ);
+		scene.add(gridLines);
+
+		// resize pick plane to cover [-0.5..sizeX-0.5] etc.
+		// PlaneGeometry is centered; scale to sizeX, sizeZ and position at center of footprint.
+		pickPlane.scale.set(mapSize.sizeX, 1, mapSize.sizeZ);
+		pickPlane.position.set(
+			(mapSize.sizeX - 1) / 2,
+			0,
+			(mapSize.sizeZ - 1) / 2,
+		);
+
+		// controls target to center of map footprint
+		controls.target.set(
+			(mapSize.sizeX - 1) / 2,
+			0,
+			(mapSize.sizeZ - 1) / 2,
+		);
+		controls.update();
+	}
+
+	setMapSize(mapSize);
+
+	// -----------------------------
+	// Cursor cube (wireframe 1x1x1 outline)
+	// -----------------------------
+	const cursorCube = new THREE.Mesh(
+		new THREE.BoxGeometry(1, 1, 1),
+		new THREE.MeshBasicMaterial({
+			color: 0xffffff,
+			wireframe: true,
+			transparent: true,
+			opacity: 0.7,
+		}),
+	);
+	cursorCube.visible = true;
+	cursorCube.position.set(0, 0, 0);
+	scene.add(cursorCube);
+
+	// -----------------------------
+	// Hover tooltip (CSS2D)
+	// -----------------------------
 	const hoverDiv = document.createElement("div");
 	hoverDiv.style.padding = "4px 6px";
 	hoverDiv.style.borderRadius = "6px";
-	hoverDiv.style.background = "rgba(0,0,0,0.7)";
+	hoverDiv.style.background = "rgba(0,0,0,0.75)";
 	hoverDiv.style.color = "white";
 	hoverDiv.style.font =
 		"12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
@@ -86,101 +183,14 @@ export function createSceneApp({ onCellClick } = {}) {
 	hoverLabel.visible = false;
 	scene.add(hoverLabel);
 
-	// ---- Rendering registry ----
+	// -----------------------------
+	// Rendered objects registry
+	// -----------------------------
 	const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+	const cubes = [];
+	const meshById = new Map();
+	const staticLabelById = new Map();
 
-	const cubes = []; // meshes for raycasting
-	const meshById = new Map(); // id -> mesh
-	const staticLabelById = new Map(); // id -> CSS2DObject
-
-	// ---- Raycasting ----
-	const raycaster = new THREE.Raycaster();
-	const pointer = new THREE.Vector2(9999, 9999);
-	let pointerInside = false;
-	let hoveredMesh = null;
-
-	function getPointerNDC(event) {
-		const rect = renderer.domElement.getBoundingClientRect();
-		const x = event.clientX - rect.left;
-		const y = event.clientY - rect.top;
-		return {
-			x: (x / rect.width) * 2 - 1,
-			y: -(y / rect.height) * 2 + 1,
-		};
-	}
-
-	renderer.domElement.addEventListener(
-		"pointerenter",
-		() => (pointerInside = true),
-	);
-	renderer.domElement.addEventListener("pointerleave", () => {
-		pointerInside = false;
-		setHovered(null);
-	});
-	renderer.domElement.addEventListener("pointermove", (event) => {
-		const ndc = getPointerNDC(event);
-		pointer.x = ndc.x;
-		pointer.y = ndc.y;
-	});
-
-	// Click-to-place: pick point on y=0 plane -> integer cell coords
-	renderer.domElement.addEventListener("pointerdown", (event) => {
-		// ignore non-left click
-		if (event.button !== 0) return;
-
-		const ndc = getPointerNDC(event);
-		raycaster.setFromCamera(ndc, camera);
-
-		const hits = raycaster.intersectObject(groundPlane, false);
-		if (hits.length === 0) return;
-
-		const p = hits[0].point; // world point on plane
-
-		// Convert world coords to integer cell coords.
-		// We treat each cell as 1 unit, centered on integers.
-		const cellX = Math.round(p.x);
-		const cellZ = Math.round(p.z);
-		const cellY = 0;
-
-		onCellClick?.({ x: cellX, y: cellY, z: cellZ });
-	});
-
-	function setHovered(mesh) {
-		hoveredMesh = mesh;
-
-		if (!mesh) {
-			hoverLabel.visible = false;
-			scene.add(hoverLabel); // detach
-			return;
-		}
-
-		const ud = mesh.userData || {};
-		const text =
-			`${(ud.kind || "obj").toUpperCase()} • ${ud.name || "Unnamed"} • ` +
-			`size ${ud.sizeValue ?? "?"} • (${ud.pos?.x},${ud.pos?.y},${ud.pos?.z})`;
-
-		hoverDiv.textContent = text;
-
-		mesh.add(hoverLabel);
-		hoverLabel.position.set(0, 0.6, 0);
-		hoverLabel.visible = true;
-	}
-
-	function updateHover() {
-		if (!pointerInside) return;
-
-		raycaster.setFromCamera(pointer, camera);
-		const hits = raycaster.intersectObjects(cubes, false);
-		if (hits.length === 0) {
-			if (hoveredMesh) setHovered(null);
-			return;
-		}
-
-		const hit = hits[0].object;
-		if (hit !== hoveredMesh) setHovered(hit);
-	}
-
-	// ---- Static labels (optional per object) ----
 	function createStaticLabel(text) {
 		const div = document.createElement("div");
 		div.style.padding = "2px 5px";
@@ -198,18 +208,17 @@ export function createSceneApp({ onCellClick } = {}) {
 		return obj;
 	}
 
-	// ---- Render from state ----
 	function clearRenderedObjects() {
 		for (const mesh of cubes) {
-			if (mesh.parent) mesh.parent.remove(mesh);
-			mesh.geometry?.dispose?.();
+			mesh.parent?.remove(mesh);
 			mesh.material?.dispose?.();
+			// cubeGeo is shared; don't dispose geometry
 		}
 		cubes.length = 0;
 		meshById.clear();
 
 		for (const lbl of staticLabelById.values()) {
-			if (lbl.parent) lbl.parent.remove(lbl);
+			lbl.parent?.remove(lbl);
 		}
 		staticLabelById.clear();
 
@@ -217,11 +226,18 @@ export function createSceneApp({ onCellClick } = {}) {
 	}
 
 	function renderFromState(state) {
+		setMapSize({
+			sizeX: state.map.sizeX,
+			sizeY: state.map.sizeY,
+			sizeZ: state.map.sizeZ,
+		});
+
 		clearRenderedObjects();
 
 		for (const obj of state.objects) {
-			const color = new THREE.Color(obj.color || "#808080");
-			const mat = new THREE.MeshStandardMaterial({ color });
+			const mat = new THREE.MeshStandardMaterial({
+				color: new THREE.Color(obj.color || "#808080"),
+			});
 			const mesh = new THREE.Mesh(cubeGeo, mat);
 
 			mesh.position.set(obj.pos.x, obj.pos.y, obj.pos.z);
@@ -231,7 +247,6 @@ export function createSceneApp({ onCellClick } = {}) {
 				id: obj.id,
 				kind: obj.kind,
 				name: obj.name,
-				sizeKey: obj.sizeKey,
 				sizeValue: obj.sizeValue,
 				pos: obj.pos,
 			};
@@ -241,15 +256,118 @@ export function createSceneApp({ onCellClick } = {}) {
 			meshById.set(obj.id, mesh);
 
 			if (obj.labelEnabled) {
-				const labelText = `${obj.name} (${obj.sizeValue})`;
-				const lbl = createStaticLabel(labelText);
+				const lbl = createStaticLabel(`${obj.name} (${obj.sizeValue})`);
 				mesh.add(lbl);
 				staticLabelById.set(obj.id, lbl);
 			}
 		}
 	}
 
-	// ---- Resize ----
+	// -----------------------------
+	// Raycasting (hover + cursor + click)
+	// -----------------------------
+	const raycaster = new THREE.Raycaster();
+	const pointer = new THREE.Vector2(9999, 9999);
+	let pointerInside = false;
+	let hoveredMesh = null;
+
+	function getPointerNDC(event) {
+		const rect = renderer.domElement.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		return { x: (x / rect.width) * 2 - 1, y: -(y / rect.height) * 2 + 1 };
+	}
+
+	function worldPointToCell(p) {
+		// Cells are centered on integers; boundaries are at n +/- 0.5
+		let x = Math.floor(p.x + 0.5);
+		let z = Math.floor(p.z + 0.5);
+		let y = 0;
+
+		x = Math.max(0, Math.min(mapSize.sizeX - 1, x));
+		z = Math.max(0, Math.min(mapSize.sizeZ - 1, z));
+
+		return { x, y, z };
+	}
+
+	function setHovered(mesh) {
+		hoveredMesh = mesh;
+
+		if (!mesh || mode.isAdding) {
+			hoverLabel.visible = false;
+			scene.add(hoverLabel);
+			return;
+		}
+
+		const ud = mesh.userData || {};
+		hoverDiv.textContent = `${(ud.kind || "OBJ").toUpperCase()} • ${ud.name} • size ${ud.sizeValue} • (${ud.pos.x},${ud.pos.y},${ud.pos.z})`;
+
+		mesh.add(hoverLabel);
+		hoverLabel.position.set(0, 0.6, 0);
+		hoverLabel.visible = true;
+	}
+
+	function updateCursorAndHover() {
+		if (!pointerInside) return;
+
+		// Cursor: raycast against pickPlane
+		raycaster.setFromCamera(pointer, camera);
+		const planeHits = raycaster.intersectObject(pickPlane, false);
+
+		if (planeHits.length > 0) {
+			const cell = worldPointToCell(planeHits[0].point);
+			cursorCube.position.set(cell.x, cell.y, cell.z);
+			cursorCube.visible = true;
+		} else {
+			cursorCube.visible = false;
+		}
+
+		// Hover (only in view mode)
+		if (!mode.isAdding) {
+			const cubeHits = raycaster.intersectObjects(cubes, false);
+			if (cubeHits.length === 0) {
+				if (hoveredMesh) setHovered(null);
+			} else {
+				const hit = cubeHits[0].object;
+				if (hit !== hoveredMesh) setHovered(hit);
+			}
+		} else {
+			if (hoveredMesh) setHovered(null);
+		}
+	}
+
+	renderer.domElement.addEventListener(
+		"pointerenter",
+		() => (pointerInside = true),
+	);
+	renderer.domElement.addEventListener("pointerleave", () => {
+		pointerInside = false;
+		setHovered(null);
+		cursorCube.visible = false;
+	});
+
+	renderer.domElement.addEventListener("pointermove", (event) => {
+		const ndc = getPointerNDC(event);
+		pointer.x = ndc.x;
+		pointer.y = ndc.y;
+	});
+
+	renderer.domElement.addEventListener("pointerdown", (event) => {
+		if (event.button !== 0) return;
+
+		const ndc = getPointerNDC(event);
+		raycaster.setFromCamera(ndc, camera);
+
+		const hits = raycaster.intersectObject(pickPlane, false);
+		if (hits.length === 0) return;
+
+		const cell = worldPointToCell(hits[0].point);
+		onCellClick?.(cell);
+	});
+
+	// -----------------------------
+	// Resize + loop
+	// -----------------------------
 	window.addEventListener("resize", () => {
 		camera.aspect = window.innerWidth / window.innerHeight;
 		camera.updateProjectionMatrix();
@@ -259,24 +377,19 @@ export function createSceneApp({ onCellClick } = {}) {
 		labelRenderer.setSize(window.innerWidth, window.innerHeight);
 	});
 
-	// ---- Animation loop ----
 	function animate() {
 		requestAnimationFrame(animate);
-
 		controls.update();
-		updateHover();
-
+		updateCursorAndHover();
 		renderer.render(scene, camera);
 		labelRenderer.render(scene, camera);
 	}
 	animate();
 
 	return {
-		renderer,
-		scene,
-		camera,
-		controls,
 		renderFromState,
+		setMapSize,
+		setMode,
 		getMeshById: (id) => meshById.get(id),
 	};
 }
