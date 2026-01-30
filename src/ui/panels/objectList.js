@@ -214,6 +214,51 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		panel.style.flexDirection = "column";
 		panel.style.gap = "8px";
 
+		if (obj.kind !== "env") {
+			const orderRow = h("div");
+			orderRow.style.display = "flex";
+			orderRow.style.alignItems = "center";
+			orderRow.style.gap = "8px";
+
+			const orderLabel = h("div", {
+				textContent: `Order: ${String(obj.order ?? "")}`,
+			});
+			orderLabel.style.opacity = "0.85";
+			orderLabel.style.fontSize = "12px";
+			orderLabel.style.flex = "1";
+
+			const upBtn = h("button", { textContent: "Move up" });
+			styleButton(upBtn, "neutral");
+			upBtn.style.width = "auto";
+
+			const downBtn = h("button", { textContent: "Move down" });
+			styleButton(downBtn, "neutral");
+			downBtn.style.width = "auto";
+
+			function moveOrder(dir) {
+				const sameKind = state.objects
+					.filter((o) => o.kind === obj.kind)
+					.sort(sortObjects);
+
+				const idx = sameKind.findIndex((o) => o.id === obj.id);
+				const swapWith = sameKind[idx + dir];
+				if (!swapWith) return;
+
+				const a = Number.isFinite(obj.order) ? obj.order : 0;
+				const b = Number.isFinite(swapWith.order) ? swapWith.order : 0;
+				obj.order = b;
+				swapWith.order = a;
+				onChange?.();
+				refresh();
+			}
+
+			upBtn.onclick = () => moveOrder(-1);
+			downBtn.onclick = () => moveOrder(1);
+
+			orderRow.append(orderLabel, upBtn, downBtn);
+			panel.append(orderRow);
+		}
+
 		if (!(hideEnvHpToggle.checked && obj.kind === "env")) {
 			const hpGrid = h("div");
 			hpGrid.style.display = "grid";
