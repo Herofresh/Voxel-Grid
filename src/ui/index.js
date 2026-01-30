@@ -70,6 +70,9 @@ export function mountUI({
 			onChange?.();
 			objectListPanel.refresh();
 		},
+		onChange: () => {
+			onChange?.();
+		},
 	});
 
 	const objectListPanel = createObjectListPanel({

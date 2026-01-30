@@ -70,6 +70,20 @@ export function createSceneApp({
 	let mapSize = { sizeX: 6, sizeY: 4, sizeZ: 6 };
 	const gridLinesRef = { value: null };
 
+	// Floor image (optional)
+	const floor = {
+		mesh: null,
+		material: null,
+		texture: null,
+		src: null,
+		textureSrc: null,
+		fitToMap: true,
+		width: null,
+		height: null,
+		opacity: 1,
+	};
+	const textureLoader = new THREE.TextureLoader();
+
 	// Mathematical ground plane at y=0
 	const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -155,6 +169,95 @@ export function createSceneApp({
 			(mapSize.sizeZ - 1) / 2,
 		);
 		controls.update();
+
+		updateFloorGeometry();
+	}
+
+	function getFloorDims() {
+		const fitToMap = floor.fitToMap !== false;
+		const width = fitToMap
+			? mapSize.sizeX
+			: Math.max(1, Math.trunc(Number(floor.width) || mapSize.sizeX));
+		const height = fitToMap
+			? mapSize.sizeZ
+			: Math.max(1, Math.trunc(Number(floor.height) || mapSize.sizeZ));
+		return { width, height };
+	}
+
+	function updateFloorGeometry() {
+		if (!floor.mesh) return;
+		const { width, height } = getFloorDims();
+
+		floor.mesh.geometry?.dispose?.();
+		floor.mesh.geometry = new THREE.PlaneGeometry(width, height);
+		floor.mesh.rotation.x = -Math.PI / 2;
+		floor.mesh.position.set(
+			(mapSize.sizeX - 1) / 2,
+			-0.02,
+			(mapSize.sizeZ - 1) / 2,
+		);
+	}
+
+	function ensureFloorMesh() {
+		if (floor.mesh) return;
+		floor.material = new THREE.MeshBasicMaterial({
+			color: 0xffffff,
+			transparent: true,
+			opacity: 1,
+		});
+		floor.mesh = new THREE.Mesh(
+			new THREE.PlaneGeometry(mapSize.sizeX, mapSize.sizeZ),
+			floor.material,
+		);
+		floor.mesh.rotation.x = -Math.PI / 2;
+		floor.mesh.position.set(
+			(mapSize.sizeX - 1) / 2,
+			-0.02,
+			(mapSize.sizeZ - 1) / 2,
+		);
+		scene.add(floor.mesh);
+	}
+
+	function setFloorFromState(nextFloor) {
+		const cfg = nextFloor || {};
+		const src = typeof cfg.src === "string" ? cfg.src : null;
+		const fitToMap = cfg.fitToMap !== false;
+		const width = Number.isFinite(cfg.width) ? cfg.width : null;
+		const height = Number.isFinite(cfg.height) ? cfg.height : null;
+		const opacity = Number.isFinite(cfg.opacity) ? cfg.opacity : 1;
+
+		floor.src = src;
+		floor.fitToMap = fitToMap;
+		floor.width = width;
+		floor.height = height;
+		floor.opacity = Math.max(0, Math.min(1, opacity));
+
+		if (!src) {
+			if (floor.mesh) floor.mesh.visible = false;
+			return;
+		}
+
+		ensureFloorMesh();
+		floor.mesh.visible = true;
+		floor.material.opacity = floor.opacity;
+
+		if (src !== floor.textureSrc) {
+			floor.textureSrc = src;
+			textureLoader.load(
+				src,
+				(tex) => {
+					tex.wrapS = THREE.ClampToEdgeWrapping;
+					tex.wrapT = THREE.ClampToEdgeWrapping;
+					tex.minFilter = THREE.LinearFilter;
+					floor.material.map = tex;
+					floor.material.needsUpdate = true;
+				},
+				undefined,
+				() => {},
+			);
+		}
+
+		updateFloorGeometry();
 	}
 
 	function renderFromState(state) {
@@ -164,6 +267,7 @@ export function createSceneApp({
 			sizeZ: state.map.sizeZ,
 		});
 		objects.renderFromState(state);
+		setFloorFromState(state.map.floor);
 	}
 
 	function anchorToCenter(anchor, sizeValue) {

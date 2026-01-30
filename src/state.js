@@ -22,6 +22,13 @@ export const state = {
 		sizeX: 6,
 		sizeY: 4,
 		sizeZ: 6,
+		floor: {
+			src: null,
+			fitToMap: true,
+			width: null,
+			height: null,
+			opacity: 1,
+		},
 	},
 	objects: [],
 };
@@ -148,6 +155,21 @@ export function serializeState() {
 			sizeX: state.map.sizeX,
 			sizeY: state.map.sizeY,
 			sizeZ: state.map.sizeZ,
+			floor: state.map.floor
+				? {
+						src: state.map.floor.src ?? null,
+						fitToMap: Boolean(state.map.floor.fitToMap),
+						width: Number.isFinite(state.map.floor.width)
+							? Math.trunc(state.map.floor.width)
+							: null,
+						height: Number.isFinite(state.map.floor.height)
+							? Math.trunc(state.map.floor.height)
+							: null,
+						opacity: Number.isFinite(state.map.floor.opacity)
+							? Number(state.map.floor.opacity)
+							: 1,
+					}
+				: null,
 		},
 		objects: state.objects.map((o) => ({ ...o, pos: { ...o.pos } })),
 	};
@@ -168,6 +190,36 @@ export function resetOrderCounter() {
 	_orderCounter = 1;
 }
 
+function normalizeFloor(rawFloor) {
+	if (!rawFloor || typeof rawFloor !== "object") {
+		return {
+			src: null,
+			fitToMap: true,
+			width: null,
+			height: null,
+			opacity: 1,
+		};
+	}
+
+	const width = Number.isFinite(rawFloor.width)
+		? Math.max(1, Math.trunc(rawFloor.width))
+		: null;
+	const height = Number.isFinite(rawFloor.height)
+		? Math.max(1, Math.trunc(rawFloor.height))
+		: null;
+	const opacity = Number.isFinite(rawFloor.opacity)
+		? Math.max(0, Math.min(1, Number(rawFloor.opacity)))
+		: 1;
+
+	return {
+		src: typeof rawFloor.src === "string" ? rawFloor.src : null,
+		fitToMap: rawFloor.fitToMap !== false,
+		width,
+		height,
+		opacity,
+	};
+}
+
 export function validateAndLoadState(raw) {
 	if (!raw || typeof raw !== "object")
 		throw new Error("Invalid JSON: expected object");
@@ -184,6 +236,7 @@ export function validateAndLoadState(raw) {
 	state.map.sizeX = sizeX;
 	state.map.sizeY = sizeY;
 	state.map.sizeZ = sizeZ;
+	state.map.floor = normalizeFloor(raw.map.floor);
 
 	state.objects = raw.objects.map((o, idx) => {
 		if (!o || typeof o !== "object")
