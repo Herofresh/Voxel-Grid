@@ -26,7 +26,10 @@ const app = createSceneApp({
 	onCellClick: (cell) => ui?.placeCurrentAtCell?.(cell),
 
 	// Click a cube (not in add mode) selects it and opens it in the list
-	onObjectClick: (id) => ui?.openObjectById?.(id),
+	onObjectClick: (id) => {
+		app.setSelectedId?.(id);
+		ui?.openObjectById?.(id);
+	},
 
 	// Drag a player/enemy to a new anchor position
 	onObjectMove: ({ id, pos, prevPos }) => {
@@ -61,4 +64,5 @@ ui = mountUI({
 	onModeChange: (isAdding) => app.setMode({ isAdding }),
 	onPreviewChange: (payload) => app.setPlacementPreview(payload),
 	onShuffleAnimate: (swap) => app.animateSwap(swap),
+	onSelectObject: (id) => app.setSelectedId?.(id),
 });

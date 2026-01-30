@@ -21,6 +21,7 @@ export function mountUI({
 	onModeChange,
 	onPreviewChange,
 	onShuffleAnimate,
+	onSelectObject,
 } = {}) {
 	const root = document.createElement("div");
 	root.style.position = "absolute";
@@ -85,6 +86,7 @@ export function mountUI({
 			onChange?.();
 			objectListPanel.refresh();
 		},
+		onSelect: (id) => onSelectObject?.(id),
 	});
 
 	const addPanel = createAddPanel({

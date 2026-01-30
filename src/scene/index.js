@@ -1,7 +1,10 @@
 // src/scene/index.js
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import {
+	CSS2DRenderer,
+	CSS2DObject,
+} from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
 import { setGrid } from "./grid.js";
 import {
@@ -83,6 +86,45 @@ export function createSceneApp({
 		opacity: 1,
 	};
 	const textureLoader = new THREE.TextureLoader();
+
+	// Measurement line + label
+	const measure = {
+		line: null,
+		label: null,
+		labelDiv: null,
+		aId: null,
+		bId: null,
+	};
+
+	function initMeasure() {
+		const geom = new THREE.BufferGeometry();
+		const positions = new Float32Array(6);
+		geom.setAttribute(
+			"position",
+			new THREE.BufferAttribute(positions, 3),
+		);
+		const mat = new THREE.LineBasicMaterial({ color: 0x93c5fd });
+		measure.line = new THREE.Line(geom, mat);
+		measure.line.visible = false;
+		scene.add(measure.line);
+
+		const div = document.createElement("div");
+		div.style.padding = "4px 6px";
+		div.style.borderRadius = "6px";
+		div.style.background = "rgba(0,0,0,0.75)";
+		div.style.color = "white";
+		div.style.font =
+			"12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+		div.style.whiteSpace = "nowrap";
+		div.style.transform = "translate(-50%, -120%)";
+
+		measure.labelDiv = div;
+		measure.label = new CSS2DObject(div);
+		measure.label.visible = false;
+		scene.add(measure.label);
+	}
+
+	initMeasure();
 
 	// Mathematical ground plane at y=0
 	const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -268,6 +310,9 @@ export function createSceneApp({
 		});
 		objects.renderFromState(state);
 		setFloorFromState(state.map.floor);
+
+		if (measure.aId && measure.bId)
+			setMeasurement(measure.aId, measure.bId);
 	}
 
 	function anchorToCenter(anchor, sizeValue) {
@@ -461,6 +506,87 @@ export function createSceneApp({
 		return hits.length ? hits[0].object : null;
 	}
 
+	let selectedId = null;
+
+	function clearMeasurement() {
+		measure.aId = null;
+		measure.bId = null;
+		if (measure.line) measure.line.visible = false;
+		if (measure.label) measure.label.visible = false;
+	}
+
+	function clamp(v, min, max) {
+		return Math.max(min, Math.min(max, v));
+	}
+
+	function closestBetweenRanges(aMin, aMax, bMin, bMax) {
+		if (aMax < bMin) return { a: aMax, b: bMin };
+		if (bMax < aMin) return { a: aMin, b: bMax };
+		const bCenter = (bMin + bMax) / 2;
+		const aCoord = clamp(bCenter, aMin, aMax);
+		const bCoord = clamp(aCoord, bMin, bMax);
+		return { a: aCoord, b: bCoord };
+	}
+
+	function setMeasurement(aId, bId) {
+		const aMesh = objects.meshById.get(aId);
+		const bMesh = objects.meshById.get(bId);
+		if (!aMesh || !bMesh) {
+			clearMeasurement();
+			return;
+		}
+
+		const aPos = aMesh.userData?.pos;
+		const bPos = bMesh.userData?.pos;
+		const aSize = aMesh.userData?.sizeValue ?? 1;
+		const bSize = bMesh.userData?.sizeValue ?? 1;
+		if (!aPos || !bPos) {
+			clearMeasurement();
+			return;
+		}
+
+		const aMinX = aPos.x;
+		const aMaxX = aPos.x + aSize - 1;
+		const aMinZ = aPos.z;
+		const aMaxZ = aPos.z + aSize - 1;
+		const bMinX = bPos.x;
+		const bMaxX = bPos.x + bSize - 1;
+		const bMinZ = bPos.z;
+		const bMaxZ = bPos.z + bSize - 1;
+
+		const x = closestBetweenRanges(aMinX, aMaxX, bMinX, bMaxX);
+		const z = closestBetweenRanges(aMinZ, aMaxZ, bMinZ, bMaxZ);
+
+		const aPoint = new THREE.Vector3(x.a, aPos.y, z.a);
+		const bPoint = new THREE.Vector3(x.b, bPos.y, z.b);
+
+		const dist = aPoint.distanceTo(bPoint);
+		const feet = Math.round(dist) * 5;
+
+		const posAttr = measure.line.geometry.getAttribute("position");
+		posAttr.array[0] = aPoint.x;
+		posAttr.array[1] = aPoint.y;
+		posAttr.array[2] = aPoint.z;
+		posAttr.array[3] = bPoint.x;
+		posAttr.array[4] = bPoint.y;
+		posAttr.array[5] = bPoint.z;
+		posAttr.needsUpdate = true;
+
+		const mid = aPoint.clone().add(bPoint).multiplyScalar(0.5);
+		measure.label.position.set(mid.x, mid.y + 0.2, mid.z);
+		measure.labelDiv.textContent = `${dist.toFixed(2)} | ${feet} ft`;
+
+		measure.aId = aId;
+		measure.bId = bId;
+		measure.line.visible = true;
+		measure.label.visible = true;
+	}
+
+	function setSelectedId(id) {
+		selectedId = id || null;
+		if (!selectedId) clearMeasurement();
+	}
+
 	// Click selection + drag (players/enemies), only when NOT adding
 	let downPos = null;
 	let dragActive = false;
@@ -547,6 +673,21 @@ export function createSceneApp({
 		}
 	});
 
+	// Middle mouse distance measure (selected -> target)
+	renderer.domElement.addEventListener("pointerup", (e) => {
+		if (e.button !== 1) return;
+		if (mode.isAdding) return;
+		if (!selectedId) return;
+
+		const mesh = pickObjectFromEvent(e);
+		const targetId = mesh?.userData?.id ?? null;
+		if (targetId && targetId !== selectedId) {
+			setMeasurement(selectedId, targetId);
+		} else {
+			clearMeasurement();
+		}
+	});
+
 	// Resize
 	window.addEventListener("resize", () => {
 		camera.aspect = window.innerWidth / window.innerHeight;
@@ -576,5 +717,6 @@ export function createSceneApp({
 		setMode,
 		setPlacementPreview,
 		animateSwap,
+		setSelectedId,
 	};
 }

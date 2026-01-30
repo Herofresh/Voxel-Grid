@@ -95,7 +95,12 @@ function countCubesRecursive(node) {
 	return total;
 }
 
-export function createObjectListPanel({ state, onDelete, onChange } = {}) {
+export function createObjectListPanel({
+	state,
+	onDelete,
+	onChange,
+	onSelect,
+} = {}) {
 	const header = h("div", { textContent: "Objects" });
 	header.style.fontWeight = "800";
 	header.style.marginBottom = "8px";
@@ -481,6 +486,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 			)
 				return;
 			expandedId = expandedId === obj.id ? null : obj.id;
+			onSelect?.(expandedId);
 			refresh();
 		};
 
@@ -693,6 +699,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 
 	function openObject(id) {
 		expandedId = id;
+		onSelect?.(expandedId);
 		refresh();
 		const el = cardById.get(id);
 		if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
