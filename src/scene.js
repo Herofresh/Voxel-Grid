@@ -61,7 +61,27 @@ export function createSceneApp({ onCellClick } = {}) {
 	function setMode(next) {
 		mode.isAdding = Boolean(next?.isAdding);
 		cursorGroup.visible = false; // will be re-shown when we have a valid hit
-		if (!mode.isAdding) setHovered(null);
+		if (!mode.isAdding) {
+			placementPreviewSize = 1;
+			cursorGroup.scale.set(1, 1, 1);
+			setHovered(null);
+		}
+	}
+
+	// -----------------------------
+	// Placement preview size
+	// -----------------------------
+
+	let placementPreviewSize = 1;
+	function setPlacementPreview({ sizeValue }) {
+		placementPreviewSize = Math.max(1, Number(sizeValue) || 1);
+
+		// Scale cursor cube uniformly
+		cursorGroup.scale.set(
+			placementPreviewSize,
+			placementPreviewSize,
+			placementPreviewSize,
+		);
 	}
 
 	// -----------------------------
@@ -418,7 +438,12 @@ export function createSceneApp({ onCellClick } = {}) {
 		}
 
 		const cell = worldPointToCell(p);
-		cursorGroup.position.set(cell.x, cell.y + 0.01, cell.z);
+		cursorGroup.position.set(
+			cell.x,
+			cell.y + placementPreviewSize / 2 + 0.01,
+			cell.z,
+		);
+
 		cursorGroup.visible = true;
 	}
 
@@ -474,6 +499,7 @@ export function createSceneApp({ onCellClick } = {}) {
 		renderFromState,
 		setMapSize,
 		setMode,
+		setPlacementPreview,
 		getMeshById: (id) => meshById.get(id),
 	};
 }

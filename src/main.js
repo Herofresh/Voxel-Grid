@@ -16,4 +16,5 @@ app.renderFromState(state);
 ui = mountUI({
 	onChange: () => app.renderFromState(state),
 	onModeChange: (isAdding) => app.setMode({ isAdding }),
+	onPreviewChange: ({ sizeValue }) => app.setPlacementPreview({ sizeValue }),
 });

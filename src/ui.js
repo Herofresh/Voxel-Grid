@@ -39,7 +39,7 @@ function h(tag, props = {}, children = []) {
 	return el;
 }
 
-export function mountUI({ onChange, onModeChange } = {}) {
+export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	const root = document.createElement("div");
 	root.style.position = "absolute";
 	root.style.top = "12px";
@@ -256,9 +256,17 @@ export function mountUI({ onChange, onModeChange } = {}) {
 					}),
 				);
 			}
+			sizeSelect.onchange = () => {
+				const sizeValue = SIZE_MAPS[kind][sizeSelect.value];
+				onPreviewChange?.({ sizeValue });
+			};
 		} else {
 			envSize = h("input", { type: "number", min: "1", value: "1" });
 			styleInput(envSize);
+			envSize.oninput = () => {
+				const sizeValue = Math.max(1, Number(envSize.value) || 1);
+				onPreviewChange?.({ sizeValue });
+			};
 		}
 
 		const posLabel = h("div", { textContent: "Position (x,y,z)" });
@@ -372,6 +380,14 @@ export function mountUI({ onChange, onModeChange } = {}) {
 		onModeChange?.(isAdding);
 
 		if (isAdding) buildAddForm(activeAddKind);
+
+		// initial preview size
+		if (kind === "player" || kind === "enemy") {
+			const firstKey = Object.keys(SIZE_MAPS[kind])[0];
+			onPreviewChange?.({ sizeValue: SIZE_MAPS[kind][firstKey] });
+		} else {
+			onPreviewChange?.({ sizeValue: 1 });
+		}
 	}
 
 	btnAddPlayer.onclick = () => setActiveAddKind("player");
