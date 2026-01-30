@@ -12,13 +12,13 @@ or edited manually if desired.
 
 ```json
 {
-  "version": 1,
-  "map": {
-    "sizeX": 10,
-    "sizeY": 4,
-    "sizeZ": 10
-  },
-  "objects": []
+	"version": 1,
+	"map": {
+		"sizeX": 10,
+		"sizeY": 4,
+		"sizeZ": 10
+	},
+	"objects": []
 }
 ```
 
@@ -30,9 +30,9 @@ or edited manually if desired.
 
 - `map`  
   Defines the size of the grid.
-  - `sizeX` – width (X axis), integer ≥ 1  
-  - `sizeY` – height (Y axis), integer ≥ 1  
-  - `sizeZ` – depth (Z axis), integer ≥ 1  
+    - `sizeX` – width (X axis), integer ≥ 1
+    - `sizeY` – height (Y axis), integer ≥ 1
+    - `sizeZ` – depth (Z axis), integer ≥ 1
 
 - `objects`  
   Array of placed objects (players, enemies, environment).
@@ -44,9 +44,9 @@ or edited manually if desired.
 - The grid uses **integer coordinates**
 - Only **positive values** are used
 - Axes:
-  - **X** → east / west
-  - **Y** → up
-  - **Z** → north / south
+    - **X** → east / west
+    - **Y** → up
+    - **Z** → north / south
 - The ground plane is usually at `y = 0`
 
 ### Anchor-based positioning (important)
@@ -59,10 +59,10 @@ the minimum corner (lowest X, Y, Z) of the cube’s footprint.
 Examples (X axis only, same logic applies to Z and Y):
 
 | sizeValue | pos.x | occupied cells |
-|----------:|------:|----------------|
-| 1         | 0     | [0]            |
-| 2         | 0     | [0, 1]         |
-| 4         | 3     | [3, 4, 5, 6]   |
+| --------: | ----: | -------------- |
+|         1 |     0 | [0]            |
+|         2 |     0 | [0, 1]         |
+|         4 |     3 | [3, 4, 5, 6]   |
 
 This allows even-sized cubes to align correctly to the grid.
 
@@ -74,14 +74,14 @@ Each entry in `objects` has the following structure:
 
 ```json
 {
-  "id": "obj_001",
-  "kind": "player",
-  "name": "Hero",
-  "pos": { "x": 1, "y": 0, "z": 2 },
-  "sizeKey": "medium",
-  "sizeValue": 1,
-  "color": "#22c55e",
-  "labelEnabled": true
+	"id": "obj_001",
+	"kind": "player",
+	"name": "Hero",
+	"pos": { "x": 1, "y": 0, "z": 2 },
+	"sizeKey": "medium",
+	"sizeValue": 1,
+	"color": "#22c55e",
+	"labelEnabled": true
 }
 ```
 
@@ -92,16 +92,16 @@ Each entry in `objects` has the following structure:
 
 - `kind`  
   String. One of:
-  - "player"
-  - "enemy"
-  - "env"
+    - "player"
+    - "enemy"
+    - "env"
 
 - `name`  
   String. Display name.
 
 - `pos`  
   Anchor position on the grid.
-  - `x`, `y`, `z` are integers ≥ 0
+    - `x`, `y`, `z` are integers ≥ 0
 
 - `sizeKey`  
   String or null.  
@@ -116,3 +116,44 @@ Each entry in `objects` has the following structure:
 
 - `labelEnabled`  
   Boolean. Whether a static label is shown above the object.
+
+## Example map
+
+```json
+{
+	"version": 1,
+	"map": { "sizeX": 10, "sizeY": 4, "sizeZ": 10 },
+	"objects": [
+		{
+			"id": "p1",
+			"kind": "player",
+			"name": "Rogue",
+			"pos": { "x": 1, "y": 0, "z": 2 },
+			"sizeKey": "medium",
+			"sizeValue": 1,
+			"color": "#22c55e",
+			"labelEnabled": true
+		},
+		{
+			"id": "e1",
+			"kind": "enemy",
+			"name": "Ogre",
+			"pos": { "x": 6, "y": 0, "z": 5 },
+			"sizeKey": "large",
+			"sizeValue": 2,
+			"color": "#ef4444",
+			"labelEnabled": false
+		},
+		{
+			"id": "env1",
+			"kind": "env",
+			"name": "Rock",
+			"pos": { "x": 3, "y": 0, "z": 3 },
+			"sizeKey": null,
+			"sizeValue": 1,
+			"color": "#808080",
+			"labelEnabled": false
+		}
+	]
+}
+```
