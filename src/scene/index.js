@@ -15,7 +15,11 @@ import { createObjects } from "./objects.js";
 
 const DEFAULTS = { background: 0x0b0f1a };
 
-export function createSceneApp({ onCellClick, onObjectClick } = {}) {
+export function createSceneApp({
+	onCellClick,
+	onObjectClick,
+	onObjectMove,
+} = {}) {
 	// Page setup
 	document.body.style.margin = "0";
 	document.body.style.overflow = "hidden";
@@ -213,13 +217,124 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		objects.setHovered(hits[0].object, false);
 	}
 
-	// Click selection (cube -> object id), only when NOT adding
+	function pointInsideMapFootprint(p) {
+		const xMin = -0.5;
+		const xMax = mapSize.sizeX - 0.5;
+		const zMin = -0.5;
+		const zMax = mapSize.sizeZ - 0.5;
+		const eps = 1e-6;
+
+		return (
+			p.x >= xMin - eps &&
+			p.x <= xMax + eps &&
+			p.z >= zMin - eps &&
+			p.z <= zMax + eps
+		);
+	}
+
+	function worldPointToCell(p) {
+		let x = Math.floor(p.x + 0.5);
+		let z = Math.floor(p.z + 0.5);
+		const y = 0;
+
+		x = Math.max(0, Math.min(mapSize.sizeX - 1, x));
+		z = Math.max(0, Math.min(mapSize.sizeZ - 1, z));
+		return { x, y, z };
+	}
+
+	function clampAnchorForSize(anchor, sizeValue) {
+		const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+		return {
+			x: Math.max(0, Math.min(mapSize.sizeX - s, anchor.x)),
+			y: Math.max(0, Math.min(mapSize.sizeY - s, anchor.y)),
+			z: Math.max(0, Math.min(mapSize.sizeZ - s, anchor.z)),
+		};
+	}
+
+	function setMeshPositionFromAnchor(mesh, anchor, sizeValue) {
+		const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+		const cx = anchor.x + (s - 1) / 2;
+		const cy = anchor.y + s / 2;
+		const cz = anchor.z + (s - 1) / 2;
+		mesh.position.set(cx, cy, cz);
+		mesh.userData = { ...mesh.userData, pos: { ...anchor } };
+	}
+
+	function getEventNDC(e) {
+		const rect = renderer.domElement.getBoundingClientRect();
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+		if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+		return {
+			x: (x / rect.width) * 2 - 1,
+			y: -(y / rect.height) * 2 + 1,
+		};
+	}
+
+	const dragRaycaster = new THREE.Raycaster();
+
+	function pickGroundFromEvent(e) {
+		const ndc = getEventNDC(e);
+		if (!ndc) return null;
+		dragRaycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+		const hit = new THREE.Vector3();
+		const ok = dragRaycaster.ray.intersectPlane(groundPlane, hit);
+		if (!ok) return null;
+		if (!pointInsideMapFootprint(hit)) return null;
+		return hit;
+	}
+
+	function pickObjectFromEvent(e) {
+		const ndc = getEventNDC(e);
+		if (!ndc) return null;
+		dragRaycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
+		const hits = dragRaycaster.intersectObjects(objects.cubes, false);
+		return hits.length ? hits[0].object : null;
+	}
+
+	// Click selection + drag (players/enemies), only when NOT adding
 	let downPos = null;
+	let dragActive = false;
+	let dragMoved = false;
+	let dragMesh = null;
+	let dragId = null;
+	let dragSizeValue = 1;
+	let dragAnchor = null;
 	const CLICK_MOVE_TOLERANCE_PX = 6;
 
 	renderer.domElement.addEventListener("pointerdown", (e) => {
 		if (e.button !== 0) return;
+		if (mode.isAdding) return;
 		downPos = { x: e.clientX, y: e.clientY };
+
+		const mesh = pickObjectFromEvent(e);
+		const kind = mesh?.userData?.kind;
+		if (mesh && (kind === "player" || kind === "enemy")) {
+			dragActive = true;
+			dragMoved = false;
+			dragMesh = mesh;
+			dragId = mesh.userData?.id ?? null;
+			dragSizeValue = mesh.userData?.sizeValue ?? 1;
+			dragAnchor = mesh.userData?.pos ?? null;
+			controls.enabled = false;
+		}
+	});
+
+	renderer.domElement.addEventListener("pointermove", (e) => {
+		if (!dragActive || !dragMesh) return;
+
+		const dx = e.clientX - downPos.x;
+		const dy = e.clientY - downPos.y;
+		if (!dragMoved && Math.hypot(dx, dy) <= CLICK_MOVE_TOLERANCE_PX) return;
+
+		const hit = pickGroundFromEvent(e);
+		if (!hit) return;
+
+		const cell = worldPointToCell(hit);
+		const anchor = clampAnchorForSize(cell, dragSizeValue);
+		dragAnchor = anchor;
+		dragMoved = true;
+		setMeshPositionFromAnchor(dragMesh, anchor, dragSizeValue);
 	});
 
 	renderer.domElement.addEventListener("pointerup", (e) => {
@@ -230,26 +345,30 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		const dy = e.clientY - downPos.y;
 		downPos = null;
 
-		if (Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE_PX) return;
 		if (mode.isAdding) return;
 
-		const rect = renderer.domElement.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
-		if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+		if (dragActive && dragMesh) {
+			const id = dragId;
+			if (dragMoved && id && dragAnchor) {
+				onObjectMove?.({ id, pos: { ...dragAnchor } });
+			} else if (id) {
+				onObjectClick?.(id);
+			}
+		} else {
+			if (Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE_PX) return;
+			const mesh = pickObjectFromEvent(e);
+			const id = mesh?.userData?.id;
+			if (id) onObjectClick?.(id);
+		}
 
-		const ndcX = (x / rect.width) * 2 - 1;
-		const ndcY = -(y / rect.height) * 2 + 1;
-
-		const raycaster = new THREE.Raycaster();
-		raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
-
-		const hits = raycaster.intersectObjects(objects.cubes, false);
-		if (!hits.length) return;
-
-		const mesh = hits[0].object;
-		const id = mesh?.userData?.id;
-		if (id) onObjectClick?.(id);
+		if (dragActive) {
+			dragActive = false;
+			dragMoved = false;
+			dragMesh = null;
+			dragId = null;
+			dragAnchor = null;
+			controls.enabled = true;
+		}
 	});
 
 	// Resize

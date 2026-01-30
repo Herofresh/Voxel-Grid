@@ -150,5 +150,6 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 		setPlacementPosition: addPanel.setPlacementPosition,
 		placeCurrentAtCell: addPanel.placeCurrentAtCell,
 		openObjectById,
+		refresh: () => objectListPanel.refresh(),
 	};
 }

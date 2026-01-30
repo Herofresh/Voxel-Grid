@@ -21,6 +21,16 @@ const app = createSceneApp({
 
 	// Click a cube (not in add mode) selects it and opens it in the list
 	onObjectClick: (id) => ui?.openObjectById?.(id),
+
+	// Drag a player/enemy to a new anchor position
+	onObjectMove: ({ id, pos }) => {
+		const obj = state.objects.find((o) => o.id === id);
+		if (!obj) return;
+		obj.pos = { ...pos };
+		app.renderFromState(state);
+		autosaver.scheduleSave();
+		ui?.refresh?.();
+	},
 });
 
 // Render initial state
