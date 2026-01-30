@@ -16,147 +16,192 @@ export const SIZE_MAPS = {
 	},
 };
 
-// Single source of truth (mutate in-place; don't reassign)
 export const state = {
-	map: { sizeX: 6, sizeY: 4, sizeZ: 6 },
-	objects: [], // { id, kind, name, sizeKey, sizeValue, color, pos:{x,y,z}, labelEnabled }
+	version: 1,
+	map: {
+		sizeX: 6,
+		sizeY: 4,
+		sizeZ: 6,
+	},
+	objects: [],
 };
 
-export function uid() {
-	return crypto.randomUUID
-		? crypto.randomUUID()
-		: String(Date.now() + Math.random());
+let _idCounter = 1;
+
+function nextId(prefix = "obj") {
+	const id = `${prefix}_${String(_idCounter).padStart(4, "0")}`;
+	_idCounter += 1;
+	return id;
 }
 
-export function clampInt(n, min, max) {
-	const x = Number.isFinite(n) ? Math.trunc(n) : min;
-	return Math.max(min, Math.min(max, x));
+function clampInt(v, min, max) {
+	const n = Math.trunc(Number(v) || 0);
+	return Math.max(min, Math.min(max, n));
 }
 
-export function normalizeObject(obj) {
-	// Minimal normalization + defaults (trust but verify)
-	const kind = obj.kind;
-	const name =
-		typeof obj.name === "string" && obj.name.trim()
-			? obj.name.trim()
-			: kind;
+function ensureHp(obj) {
+	// Default rules:
+	// - players/enemies default to 10 max
+	// - env default to 1 max (but you can change)
+	const defaultMax = obj.kind === "env" ? 1 : 10;
 
-	const color =
-		typeof obj.color === "string" && obj.color.startsWith("#")
-			? obj.color
-			: "#808080";
+	const hpMax =
+		Number.isFinite(obj.hpMax) && obj.hpMax > 0
+			? Math.trunc(obj.hpMax)
+			: defaultMax;
 
-	const sizeKey = typeof obj.sizeKey === "string" ? obj.sizeKey : "medium";
-	const sizeValue =
-		typeof obj.sizeValue === "number" && Number.isFinite(obj.sizeValue)
-			? obj.sizeValue
-			: 1;
+	const hp =
+		Number.isFinite(obj.hp) && obj.hp >= 0 ? Math.trunc(obj.hp) : hpMax;
 
-	const labelEnabled = Boolean(obj.labelEnabled);
-
-	const pos = obj.pos ?? {};
-	const x = Number.isFinite(pos.x) ? Math.trunc(pos.x) : 0;
-	const y = Number.isFinite(pos.y) ? Math.trunc(pos.y) : 0;
-	const z = Number.isFinite(pos.z) ? Math.trunc(pos.z) : 0;
-
-	return {
-		id: typeof obj.id === "string" ? obj.id : uid(),
-		kind,
-		name,
-		color,
-		sizeKey,
-		sizeValue,
-		labelEnabled,
-		pos: { x, y, z },
-	};
+	obj.hpMax = Math.max(1, hpMax);
+	obj.hp = clampInt(hp, 0, obj.hpMax);
+	return obj;
 }
 
 export function createObject({
 	kind,
 	name,
-	sizeKey,
-	envSizeValue,
-	color,
 	pos,
-	labelEnabled,
-}) {
-	if (!["player", "enemy", "env"].includes(kind)) {
-		throw new Error(`Invalid kind: ${kind}`);
-	}
+	color,
+	labelEnabled = false,
+	sizeKey = null,
+	envSizeValue = null,
+	hp = null,
+	hpMax = null,
+} = {}) {
+	const safeKind = kind === "enemy" || kind === "env" ? kind : "player";
 
-	let sizeValue = 1;
+	const computedSizeKey = safeKind === "env" ? null : sizeKey || "medium";
+	const computedSizeValue =
+		safeKind === "env"
+			? Math.max(1, Math.trunc(Number(envSizeValue) || 1))
+			: (SIZE_MAPS[safeKind][computedSizeKey] ?? 1);
 
-	if (kind === "player" || kind === "enemy") {
-		const map = SIZE_MAPS[kind];
-		const key = sizeKey in map ? sizeKey : "medium";
-		sizeKey = key;
-		sizeValue = map[key];
-	} else {
-		// env cube: numeric size (allow >= 1)
-		sizeKey = "custom";
-		sizeValue = Number(envSizeValue);
-		if (!Number.isFinite(sizeValue) || sizeValue < 1) sizeValue = 1;
-		sizeValue = Math.trunc(sizeValue);
-	}
-
-	return normalizeObject({
-		id: uid(),
-		kind,
-		name: name?.trim() || (kind === "env" ? "Environment" : kind),
-		color: color || "#808080",
-		sizeKey,
-		sizeValue,
-		labelEnabled: Boolean(labelEnabled),
+	const obj = {
+		id: nextId(safeKind[0]),
+		kind: safeKind,
+		name: String(
+			name || (safeKind === "env" ? "Environment" : safeKind),
+		).trim(),
 		pos: {
-			x: Math.trunc(Number(pos?.x ?? 0)),
-			y: Math.trunc(Number(pos?.y ?? 0)),
-			z: Math.trunc(Number(pos?.z ?? 0)),
+			x: Math.max(0, Math.trunc(pos?.x ?? 0)),
+			y: Math.max(0, Math.trunc(pos?.y ?? 0)),
+			z: Math.max(0, Math.trunc(pos?.z ?? 0)),
 		},
-	});
+		sizeKey: computedSizeKey,
+		sizeValue: computedSizeValue,
+		color:
+			color ||
+			(safeKind === "env"
+				? "#808080"
+				: safeKind === "player"
+					? "#22c55e"
+					: "#ef4444"),
+		labelEnabled: Boolean(labelEnabled),
+
+		// Health
+		hp,
+		hpMax,
+	};
+
+	return ensureHp(obj);
 }
 
-export function validateAndLoadState(json) {
-	// Basic schema validation (keeps MVP resilient)
-	if (!json || typeof json !== "object") throw new Error("Invalid JSON root");
+export function serializeState() {
+	// Always export the current in-memory state in a stable shape
+	return {
+		version: 1,
+		map: {
+			sizeX: state.map.sizeX,
+			sizeY: state.map.sizeY,
+			sizeZ: state.map.sizeZ,
+		},
+		objects: state.objects.map((o) => ({ ...o, pos: { ...o.pos } })),
+	};
+}
 
-	const map = json.map;
-	if (!map || typeof map !== "object") throw new Error("Missing map");
+export function validateAndLoadState(raw) {
+	if (!raw || typeof raw !== "object")
+		throw new Error("Invalid JSON: expected object");
+	if (!raw.map || typeof raw.map !== "object")
+		throw new Error("Invalid JSON: missing map");
+	if (!Array.isArray(raw.objects))
+		throw new Error("Invalid JSON: objects must be an array");
 
-	const sizeX = Math.trunc(Number(map.sizeX));
-	const sizeY = Math.trunc(Number(map.sizeY));
-	const sizeZ = Math.trunc(Number(map.sizeZ));
-	if (![sizeX, sizeY, sizeZ].every((n) => Number.isFinite(n) && n >= 1)) {
-		throw new Error("Map sizes must be integers >= 1");
-	}
+	const sizeX = Math.max(1, Math.trunc(Number(raw.map.sizeX) || 1));
+	const sizeY = Math.max(1, Math.trunc(Number(raw.map.sizeY) || 1));
+	const sizeZ = Math.max(1, Math.trunc(Number(raw.map.sizeZ) || 1));
 
-	const objects = Array.isArray(json.objects) ? json.objects : [];
-	const normalized = objects
-		.filter((o) => o && typeof o === "object")
-		.filter((o) => ["player", "enemy", "env"].includes(o.kind))
-		.map((o) => normalizeObject(o));
-
-	// Mutate in place (important)
+	state.version = 1;
 	state.map.sizeX = sizeX;
 	state.map.sizeY = sizeY;
 	state.map.sizeZ = sizeZ;
 
-	state.objects.length = 0;
-	state.objects.push(...normalized);
+	state.objects = raw.objects.map((o, idx) => {
+		if (!o || typeof o !== "object")
+			throw new Error(`Invalid object at index ${idx}`);
+
+		const kind = o.kind === "enemy" || o.kind === "env" ? o.kind : "player";
+		const sizeKey =
+			kind === "env"
+				? null
+				: typeof o.sizeKey === "string"
+					? o.sizeKey
+					: "medium";
+
+		const sizeValue =
+			Number.isFinite(o.sizeValue) && o.sizeValue >= 1
+				? Math.trunc(o.sizeValue)
+				: kind === "env"
+					? 1
+					: (SIZE_MAPS[kind][sizeKey] ?? 1);
+
+		const obj = {
+			id: typeof o.id === "string" ? o.id : `obj_${idx}`,
+			kind,
+			name: typeof o.name === "string" ? o.name : kind,
+			pos: {
+				x: Math.max(0, Math.trunc(Number(o.pos?.x) || 0)),
+				y: Math.max(0, Math.trunc(Number(o.pos?.y) || 0)),
+				z: Math.max(0, Math.trunc(Number(o.pos?.z) || 0)),
+			},
+			sizeKey,
+			sizeValue,
+			color: typeof o.color === "string" ? o.color : "#808080",
+			labelEnabled: Boolean(o.labelEnabled),
+
+			hp: Number.isFinite(o.hp) ? Math.trunc(o.hp) : undefined,
+			hpMax: Number.isFinite(o.hpMax) ? Math.trunc(o.hpMax) : undefined,
+		};
+
+		return ensureHp(obj);
+	});
+
+	// keep id counter ahead (best-effort)
+	for (const o of state.objects) {
+		const m = String(o.id).match(/_(\d+)$/);
+		if (m) _idCounter = Math.max(_idCounter, Number(m[1]) + 1);
+	}
+
+	return true;
 }
 
-export function serializeState() {
-	// Return plain JSON-safe object
+export function clampPosToMap(pos) {
 	return {
-		map: { ...state.map },
-		objects: state.objects.map((o) => ({
-			id: o.id,
-			kind: o.kind,
-			name: o.name,
-			color: o.color,
-			sizeKey: o.sizeKey,
-			sizeValue: o.sizeValue,
-			labelEnabled: o.labelEnabled,
-			pos: { ...o.pos },
-		})),
+		x: clampInt(pos.x, 0, state.map.sizeX - 1),
+		y: clampInt(pos.y ?? 0, 0, state.map.sizeY - 1),
+		z: clampInt(pos.z, 0, state.map.sizeZ - 1),
 	};
+}
+
+export function isAnchorInBoundsForSize(anchor, sizeValue) {
+	const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+	return (
+		anchor.x >= 0 &&
+		anchor.y >= 0 &&
+		anchor.z >= 0 &&
+		anchor.x + s - 1 <= state.map.sizeX - 1 &&
+		anchor.y + s - 1 <= state.map.sizeY - 1 &&
+		anchor.z + s - 1 <= state.map.sizeZ - 1
+	);
 }

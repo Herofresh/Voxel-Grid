@@ -55,6 +55,32 @@ export function createAddPanel({
 		return row;
 	}
 
+	function hpRow(defaultMax = 10) {
+		const hpMax = h("input", {
+			type: "number",
+			min: "1",
+			value: String(defaultMax),
+		});
+		const hp = h("input", {
+			type: "number",
+			min: "0",
+			value: String(defaultMax),
+		});
+		[hpMax, hp].forEach(styleInput);
+
+		const row = h("div");
+		row.style.display = "grid";
+		row.style.gridTemplateColumns = "1fr 1fr";
+		row.style.gap = "8px";
+
+		row.append(
+			h("div", {}, [h("div", { textContent: "HP Max" }), hpMax]),
+			h("div", {}, [h("div", { textContent: "HP" }), hp]),
+		);
+
+		return { row, hp, hpMax };
+	}
+
 	function buildAddForm(kind) {
 		addPanel.innerHTML = "";
 
@@ -84,7 +110,6 @@ export function createAddPanel({
 				);
 			}
 
-			// initial preview from first option
 			onPreviewChange?.({ sizeValue: map[sizeSelect.value] });
 
 			sizeSelect.onchange = () => {
@@ -119,12 +144,6 @@ export function createAddPanel({
 			h("span", { textContent: "Static label" }),
 		);
 
-		const colorRow = h("div");
-		colorRow.style.display = "flex";
-		colorRow.style.gap = "8px";
-		colorRow.style.marginTop = "8px";
-		colorRow.style.alignItems = "center";
-
 		const defaultColor =
 			kind === "env"
 				? "#808080"
@@ -137,7 +156,18 @@ export function createAddPanel({
 		color.style.borderRadius = "10px";
 		color.style.border = "1px solid rgba(255,255,255,0.18)";
 		color.style.background = "transparent";
+
+		const colorRow = h("div");
+		colorRow.style.display = "flex";
+		colorRow.style.gap = "8px";
+		colorRow.style.marginTop = "8px";
+		colorRow.style.alignItems = "center";
 		colorRow.append(h("div", { textContent: "Color" }), color);
+
+		// Health inputs (env defaults lower)
+		const hpDefaults = kind === "env" ? 1 : 10;
+		const hpBlock = hpRow(hpDefaults);
+		hpBlock.row.style.marginTop = "10px";
 
 		const warn = h("div", { textContent: "" });
 		warn.style.marginTop = "6px";
@@ -152,14 +182,18 @@ export function createAddPanel({
 
 		addBtn.onclick = () => {
 			const inputs = posInputsByKind.get(kind);
+
 			const px = Math.trunc(Number(inputs.x.value) || 0);
 			const py = Math.trunc(Number(inputs.y.value) || 0);
 			const pz = Math.trunc(Number(inputs.z.value) || 0);
+
 			const clamped = clampToBounds(px, py, pz);
 
 			if (clamped.x !== px || clamped.y !== py || clamped.z !== pz) {
 				warn.textContent = `Clamped to (${clamped.x}, ${clamped.y}, ${clamped.z})`;
-			} else warn.textContent = "";
+			} else {
+				warn.textContent = "";
+			}
 
 			const obj = createObject({
 				kind,
@@ -169,6 +203,8 @@ export function createAddPanel({
 				color: color.value,
 				pos: clamped,
 				labelEnabled: labelEnabled.checked,
+				hp: Number(hpBlock.hp.value),
+				hpMax: Number(hpBlock.hpMax.value),
 			});
 
 			state.objects.push(obj);
@@ -198,6 +234,7 @@ export function createAddPanel({
 			pos,
 			labelRow,
 			colorRow,
+			hpBlock.row,
 			warn,
 			addBtn,
 			closeBtn,

@@ -6,6 +6,7 @@ import { createMapSizePanel } from "./panels/mapSize.js";
 import { createObjectListPanel } from "./panels/objectList.js";
 import { createAddPanel } from "./panels/add.js";
 import { createIOPanel } from "./panels/io.js";
+import { createShufflePanel } from "./panels/shuffle.js";
 
 export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	const root = document.createElement("div");
@@ -43,6 +44,10 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 			onChange?.();
 			objectListPanel.refresh();
 		},
+		onChange: () => {
+			onChange?.();
+			objectListPanel.refresh();
+		},
 	});
 
 	const addPanel = createAddPanel({
@@ -53,6 +58,14 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 		},
 		onModeChange,
 		onPreviewChange,
+	});
+
+	const shufflePanel = createShufflePanel({
+		state,
+		onChange: () => {
+			onChange?.();
+			objectListPanel.refresh();
+		},
 	});
 
 	const ioPanel = createIOPanel({
@@ -71,6 +84,8 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 		objectListPanel.el,
 		divider(),
 		addPanel.el,
+		divider(),
+		shufflePanel.el,
 		divider(),
 		ioPanel.el,
 	);
