@@ -6,9 +6,7 @@ import {
 	CSS2DObject,
 } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
-const DEFAULTS = {
-	background: 0x0b0f1a,
-};
+const DEFAULTS = { background: 0x0b0f1a };
 
 export function createSceneApp({ onCellClick } = {}) {
 	// -----------------------------
@@ -52,45 +50,41 @@ export function createSceneApp({ onCellClick } = {}) {
 	dir.position.set(10, 20, 10);
 	scene.add(dir);
 
-	scene.add(new THREE.AxesHelper(10));
+	// Axes helper out of the way (updated in setMapSize)
+	const axesHelper = new THREE.AxesHelper(2.5);
+	scene.add(axesHelper);
 
 	// -----------------------------
 	// Mode: view vs add
 	// -----------------------------
-	const mode = {
-		isAdding: false, // when true: disable hover labels
-	};
-
+	const mode = { isAdding: false };
 	function setMode(next) {
 		mode.isAdding = Boolean(next?.isAdding);
-		// cursor cube should always show (helps even in view),
-		// but you can choose to hide it in view if you want.
+		cursorGroup.visible = false; // will be re-shown when we have a valid hit
+		if (!mode.isAdding) setHovered(null);
 	}
 
 	// -----------------------------
-	// Map size + map-aligned grid & picking plane
+	// Map size + aligned grid
 	// -----------------------------
 	let mapSize = { sizeX: 6, sizeY: 4, sizeZ: 6 };
-
-	// Custom grid lines (so it aligns with integer-centered cells)
 	let gridLines = null;
+
+	// Mathematical ground plane at y=0
+	const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 	function buildGridLines(sizeX, sizeZ) {
 		const verts = [];
-
 		const xMin = -0.5;
 		const xMax = sizeX - 0.5;
 		const zMin = -0.5;
 		const zMax = sizeZ - 0.5;
-		const y = -0.5; // under cubes slightly
+		const y = -0.5;
 
-		// Lines parallel to Z (vary X)
 		for (let x = 0; x <= sizeX; x++) {
 			const xx = x - 0.5;
 			verts.push(xx, y, zMin, xx, y, zMax);
 		}
-
-		// Lines parallel to X (vary Z)
 		for (let z = 0; z <= sizeZ; z++) {
 			const zz = z - 0.5;
 			verts.push(xMin, y, zz, xMax, y, zz);
@@ -106,21 +100,12 @@ export function createSceneApp({ onCellClick } = {}) {
 			transparent: true,
 			opacity: 0.9,
 		});
-
 		return new THREE.LineSegments(geom, mat);
 	}
-
-	// Picking plane constrained to map footprint
-	const pickPlaneGeo = new THREE.PlaneGeometry(1, 1);
-	const pickPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
-	const pickPlane = new THREE.Mesh(pickPlaneGeo, pickPlaneMat);
-	pickPlane.rotation.x = -Math.PI / 2;
-	scene.add(pickPlane);
 
 	function setMapSize(next) {
 		mapSize = { ...mapSize, ...next };
 
-		// rebuild grid lines
 		if (gridLines) {
 			scene.remove(gridLines);
 			gridLines.geometry.dispose();
@@ -129,44 +114,55 @@ export function createSceneApp({ onCellClick } = {}) {
 		gridLines = buildGridLines(mapSize.sizeX, mapSize.sizeZ);
 		scene.add(gridLines);
 
-		// resize pick plane to cover [-0.5..sizeX-0.5] etc.
-		// PlaneGeometry is centered; scale to sizeX, sizeZ and position at center of footprint.
-		pickPlane.scale.set(mapSize.sizeX, 1, mapSize.sizeZ);
-		pickPlane.position.set(
-			(mapSize.sizeX - 1) / 2,
-			0,
-			(mapSize.sizeZ - 1) / 2,
-		);
-
-		// controls target to center of map footprint
 		controls.target.set(
 			(mapSize.sizeX - 1) / 2,
 			0,
 			(mapSize.sizeZ - 1) / 2,
 		);
 		controls.update();
+
+		axesHelper.position.set(-1, 0, -1);
 	}
 
 	setMapSize(mapSize);
 
 	// -----------------------------
-	// Cursor cube (wireframe 1x1x1 outline)
+	// Cursor highlight (EdgesGeometry) - add mode only
 	// -----------------------------
-	const cursorCube = new THREE.Mesh(
+	const cursorGroup = new THREE.Group();
+
+	const cursorFill = new THREE.Mesh(
 		new THREE.BoxGeometry(1, 1, 1),
 		new THREE.MeshBasicMaterial({
 			color: 0xffffff,
-			wireframe: true,
 			transparent: true,
-			opacity: 0.7,
+			opacity: 0.06,
+			depthTest: false,
+			depthWrite: false,
 		}),
 	);
-	cursorCube.visible = true;
-	cursorCube.position.set(0, 0, 0);
-	scene.add(cursorCube);
+	cursorFill.renderOrder = 999;
+
+	const cursorEdges = new THREE.LineSegments(
+		new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+		new THREE.LineBasicMaterial({
+			color: 0xffffff,
+			transparent: true,
+			opacity: 0.95,
+			depthTest: false,
+			depthWrite: false,
+		}),
+	);
+	cursorEdges.renderOrder = 1000;
+
+	cursorGroup.add(cursorFill);
+	cursorGroup.add(cursorEdges);
+	cursorGroup.visible = false;
+	cursorGroup.position.set(0, 0.01, 0);
+	scene.add(cursorGroup);
 
 	// -----------------------------
-	// Hover tooltip (CSS2D)
+	// Hover label (your labels are fine; keep minimal)
 	// -----------------------------
 	const hoverDiv = document.createElement("div");
 	hoverDiv.style.padding = "4px 6px";
@@ -184,12 +180,13 @@ export function createSceneApp({ onCellClick } = {}) {
 	scene.add(hoverLabel);
 
 	// -----------------------------
-	// Rendered objects registry
+	// Rendered object registry
 	// -----------------------------
 	const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
 	const cubes = [];
 	const meshById = new Map();
 	const staticLabelById = new Map();
+	let hoveredMesh = null;
 
 	function createStaticLabel(text) {
 		const div = document.createElement("div");
@@ -208,11 +205,29 @@ export function createSceneApp({ onCellClick } = {}) {
 		return obj;
 	}
 
+	function setHovered(mesh) {
+		hoveredMesh = mesh;
+
+		if (!mesh || mode.isAdding) {
+			hoverLabel.visible = false;
+			scene.add(hoverLabel);
+			return;
+		}
+
+		const ud = mesh.userData || {};
+		hoverDiv.textContent = `${(ud.kind || "OBJ").toUpperCase()} • ${ud.name} • size ${
+			ud.sizeValue
+		} • (${ud.pos.x},${ud.pos.y},${ud.pos.z})`;
+
+		mesh.add(hoverLabel);
+		hoverLabel.position.set(0, 0.6, 0);
+		hoverLabel.visible = true;
+	}
+
 	function clearRenderedObjects() {
 		for (const mesh of cubes) {
 			mesh.parent?.remove(mesh);
 			mesh.material?.dispose?.();
-			// cubeGeo is shared; don't dispose geometry
 		}
 		cubes.length = 0;
 		meshById.clear();
@@ -264,109 +279,175 @@ export function createSceneApp({ onCellClick } = {}) {
 	}
 
 	// -----------------------------
-	// Raycasting (hover + cursor + click)
+	// Pointer + robust ground intersection (no mesh raycast)
 	// -----------------------------
 	const raycaster = new THREE.Raycaster();
-	const pointer = new THREE.Vector2(9999, 9999);
-	let pointerInside = false;
-	let hoveredMesh = null;
+	const pointerNDC = new THREE.Vector2(9999, 9999);
+	let lastClient = { x: -9999, y: -9999 };
 
-	function getPointerNDC(event) {
-		const rect = renderer.domElement.getBoundingClientRect();
-		const x = event.clientX - rect.left;
-		const y = event.clientY - rect.top;
-		return { x: (x / rect.width) * 2 - 1, y: -(y / rect.height) * 2 + 1 };
+	// click vs drag tolerance
+	let downPos = null;
+	const CLICK_MOVE_TOLERANCE_PX = 6;
+
+	function getCanvasRect() {
+		return renderer.domElement.getBoundingClientRect();
 	}
 
-	function worldPointToCell(p) {
-		// Cells are centered on integers; boundaries are at n +/- 0.5
-		let x = Math.floor(p.x + 0.5);
-		let z = Math.floor(p.z + 0.5);
-		let y = 0;
+	function updatePointerFromClient(clientX, clientY) {
+		const rect = getCanvasRect();
+		lastClient.x = clientX;
+		lastClient.y = clientY;
 
-		x = Math.max(0, Math.min(mapSize.sizeX - 1, x));
-		z = Math.max(0, Math.min(mapSize.sizeZ - 1, z));
+		const inside =
+			clientX >= rect.left &&
+			clientX <= rect.right &&
+			clientY >= rect.top &&
+			clientY <= rect.bottom;
 
-		return { x, y, z };
-	}
-
-	function setHovered(mesh) {
-		hoveredMesh = mesh;
-
-		if (!mesh || mode.isAdding) {
-			hoverLabel.visible = false;
-			scene.add(hoverLabel);
-			return;
+		if (!inside) {
+			// If we are outside the canvas, we won't show cursor/hovers
+			pointerNDC.set(9999, 9999);
+			return false;
 		}
 
-		const ud = mesh.userData || {};
-		hoverDiv.textContent = `${(ud.kind || "OBJ").toUpperCase()} • ${ud.name} • size ${ud.sizeValue} • (${ud.pos.x},${ud.pos.y},${ud.pos.z})`;
+		const x = clientX - rect.left;
+		const y = clientY - rect.top;
 
-		mesh.add(hoverLabel);
-		hoverLabel.position.set(0, 0.6, 0);
-		hoverLabel.visible = true;
+		pointerNDC.x = (x / rect.width) * 2 - 1;
+		pointerNDC.y = -(y / rect.height) * 2 + 1;
+		return true;
 	}
 
-	function updateCursorAndHover() {
-		if (!pointerInside) return;
-
-		// Cursor: raycast against pickPlane
-		raycaster.setFromCamera(pointer, camera);
-		const planeHits = raycaster.intersectObject(pickPlane, false);
-
-		if (planeHits.length > 0) {
-			const cell = worldPointToCell(planeHits[0].point);
-			cursorCube.position.set(cell.x, cell.y, cell.z);
-			cursorCube.visible = true;
-		} else {
-			cursorCube.visible = false;
-		}
-
-		// Hover (only in view mode)
-		if (!mode.isAdding) {
-			const cubeHits = raycaster.intersectObjects(cubes, false);
-			if (cubeHits.length === 0) {
-				if (hoveredMesh) setHovered(null);
-			} else {
-				const hit = cubeHits[0].object;
-				if (hit !== hoveredMesh) setHovered(hit);
-			}
-		} else {
-			if (hoveredMesh) setHovered(null);
-		}
-	}
-
-	renderer.domElement.addEventListener(
-		"pointerenter",
-		() => (pointerInside = true),
-	);
-	renderer.domElement.addEventListener("pointerleave", () => {
-		pointerInside = false;
-		setHovered(null);
-		cursorCube.visible = false;
+	// Track pointer globally, always
+	window.addEventListener("pointermove", (e) => {
+		updatePointerFromClient(e.clientX, e.clientY);
 	});
 
-	renderer.domElement.addEventListener("pointermove", (event) => {
-		const ndc = getPointerNDC(event);
-		pointer.x = ndc.x;
-		pointer.y = ndc.y;
+	// Pointer capture helps keep consistent click detection
+	renderer.domElement.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0) return;
+		downPos = { x: e.clientX, y: e.clientY };
+		try {
+			renderer.domElement.setPointerCapture(e.pointerId);
+		} catch {}
 	});
 
-	renderer.domElement.addEventListener("pointerdown", (event) => {
-		if (event.button !== 0) return;
+	renderer.domElement.addEventListener("pointerup", (e) => {
+		if (e.button !== 0) return;
+		try {
+			renderer.domElement.releasePointerCapture(e.pointerId);
+		} catch {}
 
-		const ndc = getPointerNDC(event);
-		raycaster.setFromCamera(ndc, camera);
+		if (!mode.isAdding) return;
+		if (!downPos) return;
 
-		const hits = raycaster.intersectObject(pickPlane, false);
-		if (hits.length === 0) return;
+		const dx = e.clientX - downPos.x;
+		const dy = e.clientY - downPos.y;
+		if (Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE_PX) return;
 
-		const cell = worldPointToCell(hits[0].point);
+		// Ensure pointer NDC is computed from this exact click position
+		const inside = updatePointerFromClient(e.clientX, e.clientY);
+		if (!inside) return;
+
+		const cell = pickCellUnderPointer();
+		if (!cell) return;
+
 		onCellClick?.(cell);
 	});
 
+	function clamp(v, min, max) {
+		return Math.max(min, Math.min(max, v));
+	}
+
+	function pointInsideMapFootprint(p) {
+		const xMin = -0.5;
+		const xMax = mapSize.sizeX - 0.5;
+		const zMin = -0.5;
+		const zMax = mapSize.sizeZ - 0.5;
+		// small epsilon to avoid floating edge weirdness
+		const eps = 1e-6;
+
+		return (
+			p.x >= xMin - eps &&
+			p.x <= xMax + eps &&
+			p.z >= zMin - eps &&
+			p.z <= zMax + eps
+		);
+	}
+
+	function worldPointToCell(p) {
+		// Centers at integers, boundaries at n +/- 0.5
+		let x = Math.floor(p.x + 0.5);
+		let z = Math.floor(p.z + 0.5);
+		const y = 0;
+
+		x = clamp(x, 0, mapSize.sizeX - 1);
+		z = clamp(z, 0, mapSize.sizeZ - 1);
+		return { x, y, z };
+	}
+
+	// Robust pick: intersect ray with infinite plane y=0
+	function pickWorldPointOnGround() {
+		raycaster.setFromCamera(pointerNDC, camera);
+		const hit = new THREE.Vector3();
+		const ok = raycaster.ray.intersectPlane(groundPlane, hit);
+		if (!ok) return null;
+		if (!pointInsideMapFootprint(hit)) return null;
+		return hit;
+	}
+
+	function pickCellUnderPointer() {
+		const p = pickWorldPointOnGround();
+		if (!p) return null;
+		return worldPointToCell(p);
+	}
+
 	// -----------------------------
-	// Resize + loop
+	// Update loop: cursor + hover
+	// -----------------------------
+	function updateCursor() {
+		if (!mode.isAdding) {
+			cursorGroup.visible = false;
+			return;
+		}
+
+		const p = pickWorldPointOnGround();
+		if (!p) {
+			cursorGroup.visible = false;
+			return;
+		}
+
+		const cell = worldPointToCell(p);
+		cursorGroup.position.set(cell.x, cell.y + 0.01, cell.z);
+		cursorGroup.visible = true;
+	}
+
+	function updateHover() {
+		if (mode.isAdding) {
+			if (hoveredMesh) setHovered(null);
+			return;
+		}
+
+		// Only attempt hover if pointer is valid (inside canvas)
+		if (pointerNDC.x > 10 || pointerNDC.y > 10) {
+			if (hoveredMesh) setHovered(null);
+			return;
+		}
+
+		raycaster.setFromCamera(pointerNDC, camera);
+		const hits = raycaster.intersectObjects(cubes, false);
+
+		if (hits.length === 0) {
+			if (hoveredMesh) setHovered(null);
+			return;
+		}
+
+		const hit = hits[0].object;
+		if (hit !== hoveredMesh) setHovered(hit);
+	}
+
+	// -----------------------------
+	// Resize + animation loop
 	// -----------------------------
 	window.addEventListener("resize", () => {
 		camera.aspect = window.innerWidth / window.innerHeight;
@@ -380,7 +461,10 @@ export function createSceneApp({ onCellClick } = {}) {
 	function animate() {
 		requestAnimationFrame(animate);
 		controls.update();
-		updateCursorAndHover();
+
+		updateCursor();
+		updateHover();
+
 		renderer.render(scene, camera);
 		labelRenderer.render(scene, camera);
 	}
