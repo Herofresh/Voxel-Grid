@@ -1,14 +1,12 @@
 // src/main.js
 import { state } from "./state.js";
-import { createSceneApp } from "./scene.js";
-import { mountUI } from "./ui.js";
+import { createSceneApp } from "./scene/index.js";
+import { mountUI } from "./ui/index.js";
 
 let ui = null;
 
 const app = createSceneApp({
-	onCellClick: (cell) => {
-		ui?.setPlacementPosition(cell);
-	},
+	onCellClick: (cell) => ui?.setPlacementPosition(cell),
 });
 
 app.renderFromState(state);
