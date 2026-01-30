@@ -123,6 +123,7 @@ export function createObjects({ scene }) {
 				name: obj.name,
 				sizeValue: obj.sizeValue,
 				pos: obj.pos,
+				baseColor: obj.color || "#808080",
 			};
 
 			scene.add(mesh);
@@ -138,11 +139,24 @@ export function createObjects({ scene }) {
 		}
 	}
 
+	function setHighlightedIds(ids) {
+		const set = new Set(ids || []);
+		for (const mesh of cubes) {
+			const base =
+				mesh.userData?.baseColor ||
+				mesh.material?.color?.getStyle?.() ||
+				"#808080";
+			const color = set.has(mesh.userData?.id) ? "#a855f7" : base;
+			mesh.material.color.set(color);
+		}
+	}
+
 	return {
 		cubes,
 		meshById,
 		renderFromState,
 		setHovered,
 		setObjectPosition,
+		setHighlightedIds,
 	};
 }

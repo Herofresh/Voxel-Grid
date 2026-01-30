@@ -19,6 +19,7 @@ loadStateFromLocalStorage({ validateAndLoadState });
 const autosaver = createAutoSaver({ serializeState, delayMs: 250 });
 
 let ui = null;
+let areaHitsHandler = null;
 
 const app = createSceneApp({
 	// In add mode, click should PLACE.
@@ -51,6 +52,16 @@ const app = createSceneApp({
 		autosaver.scheduleSave();
 		ui?.refresh?.();
 	},
+
+	// Area hit list update
+	onAreaHits: (ids) => {
+		if (!areaHitsHandler) return;
+		const names = (ids || [])
+			.map((id) => state.objects.find((o) => o.id === id))
+			.filter(Boolean)
+			.map((o) => o.name);
+		areaHitsHandler(names);
+	},
 });
 
 // Render initial state
@@ -65,4 +76,9 @@ ui = mountUI({
 	onPreviewChange: (payload) => app.setPlacementPreview(payload),
 	onShuffleAnimate: (swap) => app.animateSwap(swap),
 	onSelectObject: (id) => app.setSelectedId?.(id),
+	onAreaConfigChange: (cfg) => app.setAreaConfig?.(cfg),
+	onAreaCancel: () => app.cancelArea?.(),
+	onAreaHitsRegister: (fn) => {
+		areaHitsHandler = fn;
+	},
 });

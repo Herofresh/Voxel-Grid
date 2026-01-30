@@ -7,6 +7,7 @@ import { createObjectListPanel } from "./panels/objectList.js";
 import { createAddPanel } from "./panels/add.js";
 import { createIOPanel } from "./panels/io.js";
 import { createShufflePanel } from "./panels/shuffle.js";
+import { createAreasPanel } from "./panels/areas.js";
 
 function makeTabButton(label, active = false) {
 	const b = h("button", { textContent: label });
@@ -22,6 +23,9 @@ export function mountUI({
 	onPreviewChange,
 	onShuffleAnimate,
 	onSelectObject,
+	onAreaConfigChange,
+	onAreaCancel,
+	onAreaHitsRegister,
 } = {}) {
 	const root = document.createElement("div");
 	root.style.position = "absolute";
@@ -108,6 +112,12 @@ export function mountUI({
 		onAnimateSwap: onShuffleAnimate,
 	});
 
+	const areasPanel = createAreasPanel({
+		onConfigChange: (cfg) => onAreaConfigChange?.(cfg),
+		onCancel: () => onAreaCancel?.(),
+		onHitsChange: (fn) => onAreaHitsRegister?.(fn),
+	});
+
 	const ioPanel = createIOPanel({
 		state,
 		onImported: () => {
@@ -124,7 +134,7 @@ export function mountUI({
 	tabMap.append(mapSizePanel.el, divider(), ioPanel.el);
 
 	const tabFeatures = h("div");
-	tabFeatures.append(shufflePanel.el);
+	tabFeatures.append(shufflePanel.el, divider(), areasPanel.el);
 
 	function setActive(tabName) {
 		content.innerHTML = "";

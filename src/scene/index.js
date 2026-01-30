@@ -22,6 +22,7 @@ export function createSceneApp({
 	onCellClick,
 	onObjectClick,
 	onObjectMove,
+	onAreaHits,
 } = {}) {
 	// Page setup
 	document.body.style.margin = "0";
@@ -126,6 +127,22 @@ export function createSceneApp({
 
 	initMeasure();
 
+	// Area tool
+	const area = {
+		active: false,
+		type: "burst",
+		rangeFeet: 15,
+		originSizeFeet: 5,
+		originCell: null,
+		direction: null,
+		previewCell: null,
+		overlay: {
+			mesh: null,
+			material: null,
+			count: 0,
+		},
+	};
+
 	// Mathematical ground plane at y=0
 	const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -159,6 +176,275 @@ export function createSceneApp({
 	function setMode(next) {
 		mode.isAdding = Boolean(next?.isAdding);
 		if (!mode.isAdding) setCursorVisible(cursor, false);
+	}
+
+	function gridDistanceSquares(dx, dz) {
+		const a = Math.abs(dx);
+		const b = Math.abs(dz);
+		const max = Math.max(a, b);
+		const min = Math.min(a, b);
+		return max + Math.floor(min / 2);
+	}
+
+	function axisDistanceFromPointToSquare(point, cellIndex) {
+		const min = cellIndex - 0.5;
+		const max = cellIndex + 0.5;
+		if (point < min) return Math.round(min - point);
+		if (point > max) return Math.round(point - max);
+		return 0;
+	}
+
+	function burstDistanceFromCorner(origin, cell) {
+		const cornerX = origin.x + 0.5;
+		const cornerZ = origin.z + 0.5;
+		const dx = axisDistanceFromPointToSquare(cornerX, cell.x);
+		const dz = axisDistanceFromPointToSquare(cornerZ, cell.z);
+		return gridDistanceSquares(dx, dz);
+	}
+
+	function emanationDistanceFromSquare(origin, cell, originSizeSquares = 1) {
+		const size = Math.max(1, Math.trunc(originSizeSquares));
+		const dx = Math.max(0, Math.abs(cell.x - origin.x) - (size - 1));
+		const dz = Math.max(0, Math.abs(cell.z - origin.z) - (size - 1));
+		return gridDistanceSquares(dx, dz);
+	}
+
+	function snapDirection(dx, dz) {
+		if (dx === 0 && dz === 0) return null;
+		const angle = Math.atan2(dz, dx);
+		const step = Math.PI / 4;
+		const snapped = Math.round(angle / step) * step;
+		const dirX = Math.round(Math.cos(snapped));
+		const dirZ = Math.round(Math.sin(snapped));
+		if (dirX === 0 && dirZ === 0) return null;
+		return { dirX, dirZ, angle: snapped };
+	}
+
+	function ensureAreaOverlay() {
+		const max = mapSize.sizeX * mapSize.sizeZ;
+		if (area.overlay.mesh && area.overlay.mesh.count >= max) return;
+
+		if (area.overlay.mesh) {
+			scene.remove(area.overlay.mesh);
+			area.overlay.mesh.geometry?.dispose?.();
+			area.overlay.mesh.material?.dispose?.();
+		}
+
+		const geom = new THREE.PlaneGeometry(1, 1);
+		geom.rotateX(-Math.PI / 2);
+		const mat = new THREE.MeshBasicMaterial({
+			color: 0xa855f7,
+			transparent: true,
+			opacity: 0.35,
+			depthWrite: false,
+			depthTest: false,
+			side: THREE.DoubleSide,
+		});
+		const mesh = new THREE.InstancedMesh(geom, mat, max);
+		mesh.frustumCulled = false;
+		mesh.renderOrder = 10;
+		mesh.visible = false;
+		scene.add(mesh);
+
+		area.overlay.mesh = mesh;
+		area.overlay.material = mat;
+		area.overlay.count = max;
+	}
+
+	function setOverlayCells(cells) {
+		ensureAreaOverlay();
+		if (!area.overlay.mesh) return;
+
+		const mesh = area.overlay.mesh;
+		const dummy = new THREE.Object3D();
+
+		let i = 0;
+		for (const cell of cells) {
+			dummy.position.set(cell.x, 0.01, cell.z);
+			dummy.updateMatrix();
+			mesh.setMatrixAt(i, dummy.matrix);
+			i += 1;
+		}
+		mesh.count = i;
+		mesh.visible = i > 0;
+		mesh.instanceMatrix.needsUpdate = true;
+	}
+
+	function clearAreaOverlay() {
+		if (area.overlay.mesh) area.overlay.mesh.visible = false;
+	}
+
+	function collectHitObjectIds(cells) {
+		const cellSet = new Set(cells.map((c) => `${c.x},${c.z}`));
+		const hits = [];
+
+		for (const obj of objects.meshById.values()) {
+			const pos = obj.userData?.pos;
+			const size = obj.userData?.sizeValue ?? 1;
+			if (!pos) continue;
+			let hit = false;
+			for (let x = pos.x; x <= pos.x + size - 1; x++) {
+				for (let z = pos.z; z <= pos.z + size - 1; z++) {
+					if (cellSet.has(`${x},${z}`)) {
+						hit = true;
+						break;
+					}
+				}
+				if (hit) break;
+			}
+			if (hit) hits.push(obj.userData?.id);
+		}
+
+		return hits;
+	}
+
+	function updateAreaVisualization(preview = false) {
+		if (!area.active) {
+			clearAreaOverlay();
+			objects.setHighlightedIds([]);
+			onAreaHits?.([]);
+			return;
+		}
+
+		const origin = area.originCell || area.previewCell;
+		if (!origin) {
+			clearAreaOverlay();
+			objects.setHighlightedIds([]);
+			onAreaHits?.([]);
+			return;
+		}
+
+		const rangeSquares = Math.max(
+			1,
+			Math.round(Number(area.rangeFeet) / 5),
+		);
+		const selectedMesh = selectedId ? objects.meshById.get(selectedId) : null;
+		const originSizeSquares =
+			selectedMesh?.userData?.kind === "enemy"
+				? Math.max(1, Math.trunc(selectedMesh.userData?.sizeValue || 1))
+				: Math.max(
+						1,
+						Math.round(Number(area.originSizeFeet) / 5),
+					);
+
+		let dir = area.direction;
+		if (!dir && area.previewCell && area.originCell) {
+			dir = snapDirection(
+				area.previewCell.x - area.originCell.x,
+				area.previewCell.z - area.originCell.z,
+			);
+		}
+
+		const cells = [];
+		const xMin = 0;
+		const zMin = 0;
+		const xMax = mapSize.sizeX - 1;
+		const zMax = mapSize.sizeZ - 1;
+
+		if (area.type === "line") {
+			if (!dir) {
+				setOverlayCells([]);
+				objects.setHighlightedIds([]);
+				onAreaHits?.([]);
+				return;
+			}
+			for (let i = 1; i <= rangeSquares; i++) {
+				const x = origin.x + dir.dirX * i;
+				const z = origin.z + dir.dirZ * i;
+				if (x < xMin || x > xMax || z < zMin || z > zMax) break;
+				cells.push({ x, z });
+			}
+		} else if (area.type === "cone") {
+			if (!dir) {
+				setOverlayCells([]);
+				objects.setHighlightedIds([]);
+				onAreaHits?.([]);
+				return;
+			}
+			const originPointX =
+				origin.x + (dir.dirX === 0 ? 0 : 0.5 * dir.dirX);
+			const originPointZ =
+				origin.z + (dir.dirZ === 0 ? 0 : 0.5 * dir.dirZ);
+			for (let x = xMin; x <= xMax; x++) {
+				for (let z = zMin; z <= zMax; z++) {
+					const dx = axisDistanceFromPointToSquare(originPointX, x);
+					const dz = axisDistanceFromPointToSquare(originPointZ, z);
+					const dist = gridDistanceSquares(dx, dz);
+					if (dist > rangeSquares) continue;
+					const centerDx = x - originPointX;
+					const centerDz = z - originPointZ;
+					if (centerDx === 0 && centerDz === 0) continue;
+					const dot = centerDx * dir.dirX + centerDz * dir.dirZ;
+					if (dot <= 0) continue;
+					const ang = Math.atan2(centerDz, centerDx);
+					const diff = Math.abs(
+						((ang - dir.angle + Math.PI * 3) % (Math.PI * 2)) -
+							Math.PI,
+					);
+					if (diff > Math.PI / 4) continue;
+					cells.push({ x, z });
+				}
+			}
+		} else if (area.type === "emanation") {
+			for (let x = xMin; x <= xMax; x++) {
+				for (let z = zMin; z <= zMax; z++) {
+					const dist = emanationDistanceFromSquare(
+						origin,
+						{ x, z },
+						originSizeSquares,
+					);
+					if (dist <= rangeSquares) cells.push({ x, z });
+				}
+			}
+		} else {
+			// burst
+			for (let x = xMin; x <= xMax; x++) {
+				for (let z = zMin; z <= zMax; z++) {
+					const dist = burstDistanceFromCorner(origin, { x, z });
+					if (dist <= rangeSquares) cells.push({ x, z });
+				}
+			}
+		}
+
+		setOverlayCells(cells);
+		const hitIds = collectHitObjectIds(cells);
+		objects.setHighlightedIds(hitIds);
+		onAreaHits?.(hitIds);
+	}
+
+	function setAreaConfig(next = {}) {
+		area.active = Boolean(next.active);
+		area.type = next.type || area.type;
+		area.rangeFeet =
+			Number.isFinite(next.rangeFeet) && next.rangeFeet > 0
+				? next.rangeFeet
+				: area.rangeFeet;
+		area.originSizeFeet =
+			Number.isFinite(next.originSizeFeet) && next.originSizeFeet > 0
+				? next.originSizeFeet
+				: area.originSizeFeet;
+
+		if (!area.active) {
+			area.originCell = null;
+			area.direction = null;
+			area.previewCell = null;
+			clearAreaOverlay();
+			objects.setHighlightedIds([]);
+			onAreaHits?.([]);
+		} else {
+			mode.isAdding = false;
+			setCursorVisible(cursor, false);
+		}
+	}
+
+	function cancelArea() {
+		area.active = false;
+		area.originCell = null;
+		area.direction = null;
+		area.previewCell = null;
+		clearAreaOverlay();
+		objects.setHighlightedIds([]);
+		onAreaHits?.([]);
 	}
 
 	/**
@@ -313,6 +599,7 @@ export function createSceneApp({
 
 		if (measure.aId && measure.bId)
 			setMeasurement(measure.aId, measure.bId);
+		updateAreaVisualization();
 	}
 
 	function anchorToCenter(anchor, sizeValue) {
@@ -382,6 +669,11 @@ export function createSceneApp({
 
 	// Cursor preview update (add mode only)
 	function updateCursor() {
+		if (area.active) {
+			// Area tool controls cursor preview
+			return;
+		}
+
 		if (!mode.isAdding) {
 			setCursorVisible(cursor, false);
 			return;
@@ -405,6 +697,27 @@ export function createSceneApp({
 
 		setCursorPosition(cursor, { x: cx, y: cy, z: cz });
 		setCursorVisible(cursor, true);
+	}
+
+	function updateAreaPreview() {
+		if (!area.active) return;
+
+		const cell = picking.pickCellUnderPointer();
+		if (!cell) {
+			area.previewCell = null;
+			setCursorVisible(cursor, false);
+			updateAreaVisualization(true);
+			return;
+		}
+
+		area.previewCell = cell;
+		// Project cursor onto the grid plane for area preview
+		const cx = cell.x;
+		const cz = cell.z;
+		setCursorScale(cursor, { x: 1, y: 0.02, z: 1 });
+		setCursorPosition(cursor, { x: cx, y: 0.01, z: cz });
+		setCursorVisible(cursor, true);
+		updateAreaVisualization(true);
 	}
 
 	// Hover labels update (disabled while adding)
@@ -601,6 +914,7 @@ export function createSceneApp({
 	renderer.domElement.addEventListener("pointerdown", (e) => {
 		if (e.button !== 0) return;
 		if (mode.isAdding) return;
+		if (area.active) return;
 		downPos = { x: e.clientX, y: e.clientY };
 
 		const mesh = pickObjectFromEvent(e);
@@ -643,6 +957,7 @@ export function createSceneApp({
 		downPos = null;
 
 		if (mode.isAdding) return;
+		if (area.active) return;
 
 		if (dragActive && dragMesh) {
 			const id = dragId;
@@ -677,6 +992,7 @@ export function createSceneApp({
 	renderer.domElement.addEventListener("pointerup", (e) => {
 		if (e.button !== 1) return;
 		if (mode.isAdding) return;
+		if (area.active) return;
 		if (!selectedId) return;
 
 		const mesh = pickObjectFromEvent(e);
@@ -686,6 +1002,31 @@ export function createSceneApp({
 		} else {
 			clearMeasurement();
 		}
+	});
+
+	// Area placement (left click)
+	renderer.domElement.addEventListener("pointerup", (e) => {
+		if (e.button !== 0) return;
+		if (!area.active) return;
+		if (mode.isAdding) return;
+
+		const cell = picking.pickCellUnderPointer();
+		if (!cell) return;
+
+		if (!area.originCell || area.direction) {
+			area.originCell = cell;
+			area.direction = null;
+			updateAreaVisualization();
+			return;
+		}
+
+		const dir = snapDirection(
+			cell.x - area.originCell.x,
+			cell.z - area.originCell.z,
+		);
+		if (!dir) return;
+		area.direction = dir;
+		updateAreaVisualization();
 	});
 
 	// Resize
@@ -705,6 +1046,7 @@ export function createSceneApp({
 
 		updateCursor();
 		updateHover();
+		updateAreaPreview();
 
 		renderer.render(scene, camera);
 		labelRenderer.render(scene, camera);
@@ -718,5 +1060,7 @@ export function createSceneApp({
 		setPlacementPreview,
 		animateSwap,
 		setSelectedId,
+		setAreaConfig,
+		cancelArea,
 	};
 }
