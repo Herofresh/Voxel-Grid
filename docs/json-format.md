@@ -81,7 +81,11 @@ Each entry in `objects` has the following structure:
 	"sizeKey": "medium",
 	"sizeValue": 1,
 	"color": "#22c55e",
-	"labelEnabled": true
+	"labelEnabled": true,
+	"hp": 10,
+	"hpMax": 10,
+	"order": 1,
+	"structurePath": "Castle/Walls/North"
 }
 ```
 
@@ -117,6 +121,23 @@ Each entry in `objects` has the following structure:
 - `labelEnabled`  
   Boolean. Whether a static label is shown above the object.
 
+- `hp`  
+  Integer ≥ 0. Current hit points.  
+  Default: `10` for players/enemies, `1` for env.
+
+- `hpMax`  
+  Integer ≥ 1. Maximum hit points.  
+  Default: `10` for players/enemies, `1` for env.
+
+- `order`  
+  Integer ≥ 1. Sort order for players and enemies in the list.  
+  (Env can include this but the UI ignores it.)
+
+- `structurePath`  
+  String or null. Folder-like path for environment cubes.  
+  Example: `"Castle/Walls/North"`.  
+  Empty or missing means the cube is "Loose".
+
 ## Example map
 
 ```json
@@ -132,7 +153,11 @@ Each entry in `objects` has the following structure:
 			"sizeKey": "medium",
 			"sizeValue": 1,
 			"color": "#22c55e",
-			"labelEnabled": true
+			"labelEnabled": true,
+			"hp": 10,
+			"hpMax": 10,
+			"order": 1,
+			"structurePath": null
 		},
 		{
 			"id": "e1",
@@ -142,17 +167,39 @@ Each entry in `objects` has the following structure:
 			"sizeKey": "large",
 			"sizeValue": 2,
 			"color": "#ef4444",
-			"labelEnabled": false
+			"labelEnabled": false,
+			"hp": 18,
+			"hpMax": 18,
+			"order": 2,
+			"structurePath": null
 		},
 		{
-			"id": "env1",
+			"id": "env_wall_01",
 			"kind": "env",
-			"name": "Rock",
+			"name": "Stone Wall",
 			"pos": { "x": 3, "y": 0, "z": 3 },
 			"sizeKey": null,
 			"sizeValue": 1,
 			"color": "#808080",
-			"labelEnabled": false
+			"labelEnabled": false,
+			"hp": 1,
+			"hpMax": 1,
+			"order": 0,
+			"structurePath": "Castle/Walls/North"
+		},
+		{
+			"id": "env_floor_01",
+			"kind": "env",
+			"name": "Floor Tile",
+			"pos": { "x": 2, "y": 0, "z": 2 },
+			"sizeKey": null,
+			"sizeValue": 1,
+			"color": "#6b7280",
+			"labelEnabled": false,
+			"hp": 1,
+			"hpMax": 1,
+			"order": 0,
+			"structurePath": null
 		}
 	]
 }
