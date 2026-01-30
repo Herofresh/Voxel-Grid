@@ -1,6 +1,6 @@
 // src/ui/panels/objectList.js
 import { h, styleButton, styleInput } from "../styles.js";
-import { clampPosToMap } from "../../state.js";
+import { clampPosToMap, normalizeOrders } from "../../state.js";
 
 function makeHealthBar(hp, hpMax) {
 	const outer = document.createElement("div");
@@ -236,18 +236,25 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 			downBtn.style.width = "auto";
 
 			function moveOrder(dir) {
-				const sameKind = state.objects
-					.filter((o) => o.kind === obj.kind)
-					.sort(sortObjects);
+				const list = groupToggle.checked
+					? state.objects
+							.filter((o) => o.kind === obj.kind)
+							.sort(sortObjects)
+					: state.objects
+							.filter(
+								(o) => o.kind === "player" || o.kind === "enemy",
+							)
+							.sort(sortObjects);
 
-				const idx = sameKind.findIndex((o) => o.id === obj.id);
-				const swapWith = sameKind[idx + dir];
+				const idx = list.findIndex((o) => o.id === obj.id);
+				const swapWith = list[idx + dir];
 				if (!swapWith) return;
 
 				const a = Number.isFinite(obj.order) ? obj.order : 0;
 				const b = Number.isFinite(swapWith.order) ? swapWith.order : 0;
 				obj.order = b;
 				swapWith.order = a;
+				normalizeOrders();
 				onChange?.();
 				refresh();
 			}

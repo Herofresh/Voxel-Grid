@@ -72,6 +72,13 @@ function normalizeStructurePath(p) {
 	return cleaned.length ? cleaned : null;
 }
 
+function sortByOrderThenName(a, b) {
+	const ao = Number.isFinite(a.order) ? a.order : 999999;
+	const bo = Number.isFinite(b.order) ? b.order : 999999;
+	if (ao !== bo) return ao - bo;
+	return String(a.name).localeCompare(String(b.name));
+}
+
 export function createObject({
 	kind,
 	name,
@@ -144,6 +151,21 @@ export function serializeState() {
 		},
 		objects: state.objects.map((o) => ({ ...o, pos: { ...o.pos } })),
 	};
+}
+
+export function normalizeOrders() {
+	const list = state.objects.filter(
+		(o) => o.kind === "player" || o.kind === "enemy",
+	);
+	list.sort(sortByOrderThenName);
+	for (let i = 0; i < list.length; i++) {
+		list[i].order = i + 1;
+	}
+	_orderCounter = list.length + 1;
+}
+
+export function resetOrderCounter() {
+	_orderCounter = 1;
 }
 
 export function validateAndLoadState(raw) {
@@ -219,9 +241,9 @@ export function validateAndLoadState(raw) {
 	for (const o of state.objects) {
 		const m = String(o.id).match(/_(\d+)$/);
 		if (m) _idCounter = Math.max(_idCounter, Number(m[1]) + 1);
-		if (Number.isFinite(o.order))
-			_orderCounter = Math.max(_orderCounter, o.order + 1);
 	}
+
+	normalizeOrders();
 
 	return true;
 }

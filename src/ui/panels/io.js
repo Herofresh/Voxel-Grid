@@ -1,6 +1,10 @@
 // src/ui/panels/io.js
 import { h, styleButton } from "../styles.js";
-import { serializeState, validateAndLoadState } from "../../state.js";
+import {
+	serializeState,
+	validateAndLoadState,
+	resetOrderCounter,
+} from "../../state.js";
 
 export function createIOPanel({ state, onImported }) {
 	const ioHeader = h("div", { textContent: "Save / Load" });
@@ -45,6 +49,7 @@ export function createIOPanel({ state, onImported }) {
 		);
 		if (!ok) return;
 		state.objects = [];
+		resetOrderCounter();
 		importStatus.textContent = "World cleared.";
 		onImported?.();
 	};
