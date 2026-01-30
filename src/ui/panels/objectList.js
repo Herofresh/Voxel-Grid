@@ -214,6 +214,22 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 		panel.style.flexDirection = "column";
 		panel.style.gap = "8px";
 
+		const labelRow = h("label");
+		labelRow.style.display = "flex";
+		labelRow.style.alignItems = "center";
+		labelRow.style.gap = "8px";
+		const labelToggle = h("input", {
+			type: "checkbox",
+			checked: Boolean(obj.labelEnabled),
+		});
+		labelToggle.onchange = () => {
+			obj.labelEnabled = Boolean(labelToggle.checked);
+			onChange?.();
+			refresh();
+		};
+		labelRow.append(labelToggle, h("span", { textContent: "Static label" }));
+		panel.append(labelRow);
+
 		if (obj.kind !== "env") {
 			const orderRow = h("div");
 			orderRow.style.display = "flex";
@@ -305,6 +321,47 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 				refresh();
 			};
 
+			function applyHpDelta(delta) {
+				const max = Math.max(
+					1,
+					Math.trunc(Number(hpMaxInput.value) || 1),
+				);
+				const cur = Math.max(
+					0,
+					Math.min(max, Math.trunc(Number(hpInput.value) || 0)),
+				);
+				const next = Math.max(0, Math.min(max, cur + delta));
+				obj.hpMax = max;
+				obj.hp = next;
+				hpInput.value = String(next);
+				bar.set(next, max);
+				onChange?.();
+				refresh();
+			}
+
+			const hpButtons = h("div");
+			hpButtons.style.display = "grid";
+			hpButtons.style.gridTemplateColumns =
+				"repeat(6, minmax(0, 1fr))";
+			hpButtons.style.gap = "6px";
+
+			const mk = (label, delta, variant = "neutral") => {
+				const b = h("button", { textContent: label });
+				styleButton(b, variant);
+				b.style.width = "auto";
+				b.onclick = () => applyHpDelta(delta);
+				return b;
+			};
+
+			hpButtons.append(
+				mk("-10", -10),
+				mk("-5", -5),
+				mk("-1", -1),
+				mk("+1", 1),
+				mk("+5", 5),
+				mk("+10", 10),
+			);
+
 			hpGrid.append(
 				h("div", {}, [
 					h("div", {
@@ -322,7 +379,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 				]),
 				setHp,
 			);
-			panel.append(hpGrid);
+			panel.append(hpGrid, hpButtons);
 		}
 
 		const posGrid = h("div");
