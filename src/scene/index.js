@@ -166,6 +166,71 @@ export function createSceneApp({
 		objects.renderFromState(state);
 	}
 
+	function anchorToCenter(anchor, sizeValue) {
+		const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+		return {
+			x: anchor.x + (s - 1) / 2,
+			y: anchor.y + s / 2,
+			z: anchor.z + (s - 1) / 2,
+		};
+	}
+
+	function animateSwap({
+		aId,
+		bId,
+		aFrom,
+		aTo,
+		bFrom,
+		bTo,
+		durationMs = 250,
+	} = {}) {
+		const aMesh = objects.meshById.get(aId);
+		const bMesh = objects.meshById.get(bId);
+		if (!aMesh || !bMesh) return Promise.resolve();
+
+		const aSize = aMesh.userData?.sizeValue ?? 1;
+		const bSize = bMesh.userData?.sizeValue ?? 1;
+
+		const aStart = anchorToCenter(aFrom, aSize);
+		const aEnd = anchorToCenter(aTo, aSize);
+		const bStart = anchorToCenter(bFrom, bSize);
+		const bEnd = anchorToCenter(bTo, bSize);
+
+		const start = performance.now();
+
+		return new Promise((resolve) => {
+			function step(now) {
+				const t = Math.min(
+					1,
+					(now - start) / Math.max(1, durationMs),
+				);
+				const lerp = (a, b) => a + (b - a) * t;
+
+				aMesh.position.set(
+					lerp(aStart.x, aEnd.x),
+					lerp(aStart.y, aEnd.y),
+					lerp(aStart.z, aEnd.z),
+				);
+				bMesh.position.set(
+					lerp(bStart.x, bEnd.x),
+					lerp(bStart.y, bEnd.y),
+					lerp(bStart.z, bEnd.z),
+				);
+
+				if (t < 1) {
+					requestAnimationFrame(step);
+					return;
+				}
+
+				objects.setObjectPosition(aId, aTo, aSize);
+				objects.setObjectPosition(bId, bTo, bSize);
+				resolve();
+			}
+
+			requestAnimationFrame(step);
+		});
+	}
+
 	// Cursor preview update (add mode only)
 	function updateCursor() {
 		if (!mode.isAdding) {
@@ -406,5 +471,6 @@ export function createSceneApp({
 		setMapSize,
 		setMode,
 		setPlacementPreview,
+		animateSwap,
 	};
 }

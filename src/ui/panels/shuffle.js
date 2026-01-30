@@ -12,7 +12,7 @@ function posToString(p) {
 	return `(${p.x},${p.y},${p.z})`;
 }
 
-export function createShufflePanel({ state, onChange } = {}) {
+export function createShufflePanel({ state, onChange, onAnimateSwap } = {}) {
 	const header = h("div", { textContent: "Shuffle Mode" });
 	header.style.fontWeight = "800";
 	header.style.marginBottom = "8px";
@@ -75,6 +75,9 @@ export function createShufflePanel({ state, onChange } = {}) {
 		"ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 	log.style.fontSize = "12px";
 
+	const audio = new Audio("/audio/DemonBiwa.mp3");
+	audio.preload = "auto";
+
 	function append(line) {
 		log.value += (log.value ? "\n" : "") + line;
 		log.scrollTop = log.scrollHeight;
@@ -109,48 +112,70 @@ export function createShufflePanel({ state, onChange } = {}) {
 		return { aOld, bOld };
 	}
 
-	runBtn.onclick = () => {
+	runBtn.onclick = async () => {
 		const list = eligible();
 		if (list.length < 2) {
 			append("Not enough players/enemies to shuffle.");
 			return;
 		}
 
-		const minN = Math.max(0, Math.trunc(Number(minSwaps.value) || 0));
-		const maxN = Math.max(0, Math.trunc(Number(maxSwaps.value) || 0));
-		const swaps = randInt(minN, maxN);
+		runBtn.disabled = true;
+		try {
+			try {
+				audio.currentTime = 0;
+				audio.play().catch(() => {});
+			} catch {}
 
-		append(`--- Shuffle run: ${swaps} swap(s) ---`);
+			const minN = Math.max(0, Math.trunc(Number(minSwaps.value) || 0));
+			const maxN = Math.max(0, Math.trunc(Number(maxSwaps.value) || 0));
+			const swaps = randInt(minN, maxN);
 
-		let done = 0;
-		const MAX_TRIES_PER_SWAP = 30;
+			append(`--- Shuffle run: ${swaps} swap(s) ---`);
 
-		for (let i = 0; i < swaps; i++) {
-			let swapped = false;
+			let done = 0;
+			const MAX_TRIES_PER_SWAP = 30;
 
-			for (let t = 0; t < MAX_TRIES_PER_SWAP; t++) {
-				const a = list[randInt(0, list.length - 1)];
-				let b = list[randInt(0, list.length - 1)];
-				if (a === b) continue;
+			for (let i = 0; i < swaps; i++) {
+				let swapped = false;
 
-				const result = attemptSwap(a, b);
-				if (!result) continue;
+				for (let t = 0; t < MAX_TRIES_PER_SWAP; t++) {
+					const a = list[randInt(0, list.length - 1)];
+					let b = list[randInt(0, list.length - 1)];
+					if (a === b) continue;
 
-				swapped = true;
-				done += 1;
+					const result = attemptSwap(a, b);
+					if (!result) continue;
 
-				append(
-					`#${done}: ${a.name} ${posToString(result.aOld)} ↔ ${b.name} ${posToString(result.bOld)}`,
-				);
-				break;
+					swapped = true;
+					done += 1;
+
+					append(
+						`#${done}: ${a.name} ${posToString(result.aOld)} ↔ ${b.name} ${posToString(result.bOld)}`,
+					);
+
+					if (onAnimateSwap) {
+						await onAnimateSwap({
+							aId: a.id,
+							bId: b.id,
+							aFrom: result.aOld,
+							aTo: a.pos,
+							bFrom: result.bOld,
+							bTo: b.pos,
+							durationMs: 250,
+						});
+					}
+					break;
+				}
+
+				if (!swapped) {
+					append(`#${done + 1}: skipped (no valid pair found)`);
+				}
 			}
 
-			if (!swapped) {
-				append(`#${done + 1}: skipped (no valid pair found)`);
-			}
+			onChange?.();
+		} finally {
+			runBtn.disabled = false;
 		}
-
-		onChange?.();
 	};
 
 	clearBtn.onclick = () => {

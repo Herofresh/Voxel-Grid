@@ -60,4 +60,5 @@ ui = mountUI({
 	},
 	onModeChange: (isAdding) => app.setMode({ isAdding }),
 	onPreviewChange: (payload) => app.setPlacementPreview(payload),
+	onShuffleAnimate: (swap) => app.animateSwap(swap),
 });

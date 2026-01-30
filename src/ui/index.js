@@ -16,7 +16,12 @@ function makeTabButton(label, active = false) {
 	return b;
 }
 
-export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
+export function mountUI({
+	onChange,
+	onModeChange,
+	onPreviewChange,
+	onShuffleAnimate,
+} = {}) {
 	const root = document.createElement("div");
 	root.style.position = "absolute";
 	root.style.top = "12px";
@@ -95,6 +100,7 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 			onChange?.();
 			objectListPanel.refresh();
 		},
+		onAnimateSwap: onShuffleAnimate,
 	});
 
 	const ioPanel = createIOPanel({

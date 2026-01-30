@@ -51,6 +51,25 @@ export function createObjects({ scene }) {
 		};
 	}
 
+	function setObjectPosition(id, pos, sizeValue = null) {
+		const mesh = meshById.get(id);
+		if (!mesh) return;
+		const s =
+			Number.isFinite(sizeValue) && sizeValue > 0
+				? Math.trunc(sizeValue)
+				: mesh.userData?.sizeValue ?? 1;
+		const c = centerFromAnchor(pos, s);
+		mesh.position.set(c.x, c.y, c.z);
+		mesh.userData = {
+			...mesh.userData,
+			pos: { ...pos },
+			sizeValue: s,
+		};
+
+		const lbl = staticLabelById.get(id);
+		if (lbl) lbl.position.set(0, s / 2 + 0.35, 0);
+	}
+
 	function setHovered(mesh, isAdding) {
 		hoveredMesh = mesh;
 
@@ -124,5 +143,6 @@ export function createObjects({ scene }) {
 		meshById,
 		renderFromState,
 		setHovered,
+		setObjectPosition,
 	};
 }
