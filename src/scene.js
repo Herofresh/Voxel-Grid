@@ -99,7 +99,7 @@ export function createSceneApp({ onCellClick } = {}) {
 		const xMax = sizeX - 0.5;
 		const zMin = -0.5;
 		const zMax = sizeZ - 0.5;
-		const y = -0.5;
+		const y = 0;
 
 		for (let x = 0; x <= sizeX; x++) {
 			const xx = x - 0.5;
@@ -221,7 +221,7 @@ export function createSceneApp({ onCellClick } = {}) {
 		div.textContent = text;
 
 		const obj = new CSS2DObject(div);
-		obj.position.set(0, 0.8, 0);
+		obj.position.set(0, 0, 0);
 		return obj;
 	}
 
@@ -275,8 +275,11 @@ export function createSceneApp({ onCellClick } = {}) {
 			});
 			const mesh = new THREE.Mesh(cubeGeo, mat);
 
-			mesh.position.set(obj.pos.x, obj.pos.y, obj.pos.z);
 			mesh.scale.set(obj.sizeValue, obj.sizeValue, obj.sizeValue);
+
+			// anchor to ground: grid coord is the bottom "cell" location
+			const c = centerFromAnchor(obj.pos, obj.sizeValue);
+			mesh.position.set(c.x, c.y, c.z);
 
 			mesh.userData = {
 				id: obj.id,
@@ -293,6 +296,7 @@ export function createSceneApp({ onCellClick } = {}) {
 			if (obj.labelEnabled) {
 				const lbl = createStaticLabel(`${obj.name} (${obj.sizeValue})`);
 				mesh.add(lbl);
+				lbl.position.set(0, obj.sizeValue / 2 + 0.35, 0);
 				staticLabelById.set(obj.id, lbl);
 			}
 		}
@@ -406,6 +410,15 @@ export function createSceneApp({ onCellClick } = {}) {
 		return { x, y, z };
 	}
 
+	function centerFromAnchor(pos, sizeValue) {
+		const s = sizeValue;
+		return {
+			x: pos.x + (s - 1) / 2,
+			y: pos.y + s / 2,
+			z: pos.z + (s - 1) / 2,
+		};
+	}
+
 	// Robust pick: intersect ray with infinite plane y=0
 	function pickWorldPointOnGround() {
 		raycaster.setFromCamera(pointerNDC, camera);
@@ -438,11 +451,8 @@ export function createSceneApp({ onCellClick } = {}) {
 		}
 
 		const cell = worldPointToCell(p);
-		cursorGroup.position.set(
-			cell.x,
-			cell.y + placementPreviewSize / 2 + 0.01,
-			cell.z,
-		);
+		const c = centerFromAnchor(cell, placementPreviewSize);
+		cursorGroup.position.set(c.x, c.y + 0.01, c.z);
 
 		cursorGroup.visible = true;
 	}
