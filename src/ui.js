@@ -59,6 +59,37 @@ export function mountUI({ onChange } = {}) {
 	title.style.marginBottom = "10px";
 
 	// ----------------------------
+	// Placement target
+	// ----------------------------
+	const placementHeader = h("div", { textContent: "Click-to-place target" });
+	placementHeader.style.fontWeight = "700";
+	placementHeader.style.marginBottom = "6px";
+
+	const placementTarget = h("select");
+	styleInput(placementTarget);
+	["player", "enemy", "env"].forEach((k) => {
+		placementTarget.appendChild(h("option", { value: k, textContent: k }));
+	});
+
+	const placementHint = h("div", {
+		textContent:
+			"Tip: Click on the 3D ground to fill x/y/z for the selected target.",
+	});
+	placementHint.style.marginTop = "6px";
+	placementHint.style.opacity = "0.85";
+	placementHint.style.fontSize = "12px";
+
+	// Divider helper
+	const divider = () => {
+		const hr = document.createElement("hr");
+		hr.style.border = "none";
+		hr.style.height = "1px";
+		hr.style.background = "rgba(255,255,255,0.12)";
+		hr.style.margin = "12px 0";
+		return hr;
+	};
+
+	// ----------------------------
 	// Map size section
 	// ----------------------------
 	const mapSection = h("div");
@@ -104,20 +135,10 @@ export function mountUI({ onChange } = {}) {
 
 	mapSection.append(mapHeader, gridRow, applyGrid);
 
-	// Divider helper
-	const divider = () => {
-		const hr = document.createElement("hr");
-		hr.style.border = "none";
-		hr.style.height = "1px";
-		hr.style.background = "rgba(255,255,255,0.12)";
-		hr.style.margin = "12px 0";
-		return hr;
-	};
-
 	// ----------------------------
 	// Generic fields
 	// ----------------------------
-	function posRow(prefix) {
+	function posRow() {
 		const x = h("input", { type: "number", placeholder: "x" });
 		const y = h("input", { type: "number", placeholder: "y" });
 		const z = h("input", { type: "number", placeholder: "z" });
@@ -132,17 +153,6 @@ export function mountUI({ onChange } = {}) {
 		return { row, x, y, z };
 	}
 
-	function withinBounds(x, y, z) {
-		return (
-			x >= 0 &&
-			x < state.map.sizeX &&
-			y >= 0 &&
-			y < state.map.sizeY &&
-			z >= 0 &&
-			z < state.map.sizeZ
-		);
-	}
-
 	function clampToBounds(x, y, z) {
 		const cx = Math.max(0, Math.min(state.map.sizeX - 1, x));
 		const cy = Math.max(0, Math.min(state.map.sizeY - 1, y));
@@ -150,8 +160,11 @@ export function mountUI({ onChange } = {}) {
 		return { x: cx, y: cy, z: cz };
 	}
 
+	// We'll store form input refs for click-to-place
+	const posInputsByKind = new Map();
+
 	// ----------------------------
-	// Add Player
+	// Add sections
 	// ----------------------------
 	function createAddSection({ kind }) {
 		const section = h("div");
@@ -184,7 +197,8 @@ export function mountUI({ onChange } = {}) {
 			styleInput(envSize);
 		}
 
-		const { row: pos, x, y, z } = posRow(kind);
+		const { row: pos, x, y, z } = posRow();
+		posInputsByKind.set(kind, { x, y, z });
 
 		const labelRow = h("label");
 		labelRow.style.display = "flex";
@@ -202,16 +216,14 @@ export function mountUI({ onChange } = {}) {
 		colorRow.style.marginTop = "8px";
 		colorRow.style.alignItems = "center";
 
-		const color = h("input", {
-			type: "color",
-			value:
-				kind === "env"
-					? "#808080"
-					: kind === "player"
-						? "#22c55e"
-						: "#ef4444",
-		});
-		// color input gets its own style naturally
+		const defaultColor =
+			kind === "env"
+				? "#808080"
+				: kind === "player"
+					? "#22c55e"
+					: "#ef4444";
+
+		const color = h("input", { type: "color", value: defaultColor });
 		color.style.width = "50%";
 		color.style.height = "34px";
 		color.style.borderRadius = "10px";
@@ -221,7 +233,6 @@ export function mountUI({ onChange } = {}) {
 		const colorLabel = h("div", { textContent: "Color" });
 		colorLabel.style.opacity = "0.9";
 		colorLabel.style.width = "50%";
-
 		colorRow.append(colorLabel, color);
 
 		const warn = h("div", { textContent: "" });
@@ -241,10 +252,9 @@ export function mountUI({ onChange } = {}) {
 			const py = Math.trunc(Number(y.value) || 0);
 			const pz = Math.trunc(Number(z.value) || 0);
 
-			// keep placement inside bounds (you asked for 0..size-1)
 			const clamped = clampToBounds(px, py, pz);
-			if (!withinBounds(px, py, pz)) {
-				warn.textContent = `Position clamped to (${clamped.x}, ${clamped.y}, ${clamped.z}) within map bounds.`;
+			if (clamped.x !== px || clamped.y !== py || clamped.z !== pz) {
+				warn.textContent = `Position clamped to (${clamped.x}, ${clamped.y}, ${clamped.z}) within bounds.`;
 			} else {
 				warn.textContent = "";
 			}
@@ -425,7 +435,6 @@ export function mountUI({ onChange } = {}) {
 				onChange?.();
 				refreshObjectList();
 
-				// update grid inputs too
 				gx.value = String(state.map.sizeX);
 				gy.value = String(state.map.sizeY);
 				gz.value = String(state.map.sizeZ);
@@ -436,11 +445,42 @@ export function mountUI({ onChange } = {}) {
 		reader.readAsText(file);
 	};
 
-	// Initial render of list
+	// ----------------------------
+	// Click-to-place API
+	// ----------------------------
+	function setPlacementPosition(pos) {
+		const target = placementTarget.value; // player/enemy/env
+		const inputs = posInputsByKind.get(target);
+		if (!inputs) return;
+
+		// clamp to bounds (0..size-1)
+		const cx = Math.max(
+			0,
+			Math.min(state.map.sizeX - 1, Math.trunc(pos.x)),
+		);
+		const cy = Math.max(
+			0,
+			Math.min(state.map.sizeY - 1, Math.trunc(pos.y)),
+		);
+		const cz = Math.max(
+			0,
+			Math.min(state.map.sizeZ - 1, Math.trunc(pos.z)),
+		);
+
+		inputs.x.value = String(cx);
+		inputs.y.value = String(cy);
+		inputs.z.value = String(cz);
+	}
+
+	// Initial list render
 	refreshObjectList();
 
 	root.append(
 		title,
+		placementHeader,
+		placementTarget,
+		placementHint,
+		divider(),
 		mapSection,
 		divider(),
 		addPlayer,
@@ -464,5 +504,6 @@ export function mountUI({ onChange } = {}) {
 
 	return {
 		refreshObjectList,
+		setPlacementPosition,
 	};
 }

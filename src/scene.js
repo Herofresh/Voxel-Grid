@@ -11,7 +11,7 @@ const DEFAULTS = {
 	background: 0x0b0f1a,
 };
 
-export function createSceneApp({ onHoverTextChange } = {}) {
+export function createSceneApp({ onCellClick } = {}) {
 	// ---- DOM setup ----
 	document.body.style.margin = "0";
 	document.body.style.overflow = "hidden";
@@ -57,9 +57,18 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 
 	// Helpers
 	scene.add(new THREE.AxesHelper(10));
-	const gridHelper = new THREE.GridHelper(20, 20, 0x334155, 0x1f2937);
+	const gridHelper = new THREE.GridHelper(50, 50, 0x334155, 0x1f2937);
 	gridHelper.position.y = -0.5;
 	scene.add(gridHelper);
+
+	// ---- Picking plane at y=0 (invisible) ----
+	// We'll raycast against this to get a world point, then convert to integer grid cell coords.
+	const groundPlaneGeo = new THREE.PlaneGeometry(2000, 2000);
+	const groundPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
+	const groundPlane = new THREE.Mesh(groundPlaneGeo, groundPlaneMat);
+	groundPlane.rotation.x = -Math.PI / 2; // make it horizontal
+	groundPlane.position.y = 0;
+	scene.add(groundPlane);
 
 	// ---- Hover tooltip label (single reusable) ----
 	const hoverDiv = document.createElement("div");
@@ -90,6 +99,16 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 	let pointerInside = false;
 	let hoveredMesh = null;
 
+	function getPointerNDC(event) {
+		const rect = renderer.domElement.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		return {
+			x: (x / rect.width) * 2 - 1,
+			y: -(y / rect.height) * 2 + 1,
+		};
+	}
+
 	renderer.domElement.addEventListener(
 		"pointerenter",
 		() => (pointerInside = true),
@@ -99,11 +118,31 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 		setHovered(null);
 	});
 	renderer.domElement.addEventListener("pointermove", (event) => {
-		const rect = renderer.domElement.getBoundingClientRect();
-		const x = event.clientX - rect.left;
-		const y = event.clientY - rect.top;
-		pointer.x = (x / rect.width) * 2 - 1;
-		pointer.y = -(y / rect.height) * 2 + 1;
+		const ndc = getPointerNDC(event);
+		pointer.x = ndc.x;
+		pointer.y = ndc.y;
+	});
+
+	// Click-to-place: pick point on y=0 plane -> integer cell coords
+	renderer.domElement.addEventListener("pointerdown", (event) => {
+		// ignore non-left click
+		if (event.button !== 0) return;
+
+		const ndc = getPointerNDC(event);
+		raycaster.setFromCamera(ndc, camera);
+
+		const hits = raycaster.intersectObject(groundPlane, false);
+		if (hits.length === 0) return;
+
+		const p = hits[0].point; // world point on plane
+
+		// Convert world coords to integer cell coords.
+		// We treat each cell as 1 unit, centered on integers.
+		const cellX = Math.round(p.x);
+		const cellZ = Math.round(p.z);
+		const cellY = 0;
+
+		onCellClick?.({ x: cellX, y: cellY, z: cellZ });
 	});
 
 	function setHovered(mesh) {
@@ -112,7 +151,6 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 		if (!mesh) {
 			hoverLabel.visible = false;
 			scene.add(hoverLabel); // detach
-			if (onHoverTextChange) onHoverTextChange("");
 			return;
 		}
 
@@ -122,7 +160,6 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 			`size ${ud.sizeValue ?? "?"} • (${ud.pos?.x},${ud.pos?.y},${ud.pos?.z})`;
 
 		hoverDiv.textContent = text;
-		if (onHoverTextChange) onHoverTextChange(text);
 
 		mesh.add(hoverLabel);
 		hoverLabel.position.set(0, 0.6, 0);
@@ -163,7 +200,6 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 
 	// ---- Render from state ----
 	function clearRenderedObjects() {
-		// Remove meshes + static labels, keep helpers/lights/hoverLabel
 		for (const mesh of cubes) {
 			if (mesh.parent) mesh.parent.remove(mesh);
 			mesh.geometry?.dispose?.();
@@ -183,7 +219,6 @@ export function createSceneApp({ onHoverTextChange } = {}) {
 	function renderFromState(state) {
 		clearRenderedObjects();
 
-		// Build cubes
 		for (const obj of state.objects) {
 			const color = new THREE.Color(obj.color || "#808080");
 			const mat = new THREE.MeshStandardMaterial({ color });

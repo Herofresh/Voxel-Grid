@@ -4,14 +4,17 @@ import { state } from "./state.js";
 import { createSceneApp } from "./scene.js";
 import { mountUI } from "./ui.js";
 
-// Create 3D app
-const app = createSceneApp();
+let ui = null;
 
-// Render initial
+const app = createSceneApp({
+	onCellClick: (cell) => {
+		ui?.setPlacementPosition(cell);
+	},
+});
+
 app.renderFromState(state);
 
-// Mount UI
-mountUI({
+ui = mountUI({
 	onChange: () => {
 		app.renderFromState(state);
 	},
