@@ -9,6 +9,7 @@ function makeHealthBar(hp, hpMax) {
 	outer.style.border = "1px solid rgba(255,255,255,0.16)";
 	outer.style.background = "rgba(255,255,255,0.06)";
 	outer.style.overflow = "hidden";
+	outer.style.flex = "1";
 
 	const inner = document.createElement("div");
 	const pct = hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0;
@@ -17,15 +18,8 @@ function makeHealthBar(hp, hpMax) {
 	inner.style.background = "rgba(120,180,255,0.55)";
 	outer.appendChild(inner);
 
-	const label = document.createElement("div");
-	label.textContent = `${hp}/${hpMax}`;
-	label.style.fontSize = "11px";
-	label.style.opacity = "0.85";
-	label.style.marginTop = "4px";
-
 	return {
 		outer,
-		label,
 		set: (newHp, newHpMax) => {
 			const max = Math.max(1, Math.trunc(Number(newHpMax) || 1));
 			const cur = Math.max(
@@ -34,214 +28,351 @@ function makeHealthBar(hp, hpMax) {
 			);
 			const p = Math.max(0, Math.min(1, cur / max));
 			inner.style.width = `${p * 100}%`;
-			label.textContent = `${cur}/${max}`;
 		},
 	};
 }
 
+function kindLabel(kind) {
+	if (kind === "player") return "Players";
+	if (kind === "enemy") return "Enemies";
+	return "Environment";
+}
+
+function sortObjects(a, b) {
+	const ao = Number.isFinite(a.order) ? a.order : 999999;
+	const bo = Number.isFinite(b.order) ? b.order : 999999;
+	if (ao !== bo) return ao - bo;
+	return String(a.name).localeCompare(String(b.name));
+}
+
 export function createObjectListPanel({ state, onDelete, onChange } = {}) {
-	const header = h("div", { textContent: "Placed Objects" });
+	const header = h("div", { textContent: "Objects" });
 	header.style.fontWeight = "800";
 	header.style.marginBottom = "8px";
+
+	// Controls row
+	const controls = h("div");
+	controls.style.display = "flex";
+	controls.style.alignItems = "center";
+	controls.style.justifyContent = "space-between";
+	controls.style.gap = "10px";
+	controls.style.marginBottom = "8px";
+
+	const groupLabel = h("label");
+	groupLabel.style.display = "flex";
+	groupLabel.style.alignItems = "center";
+	groupLabel.style.gap = "8px";
+
+	const groupToggle = h("input", { type: "checkbox" });
+	const groupText = h("span", { textContent: "Group by type" });
+	groupText.style.opacity = "0.9";
+	groupLabel.append(groupToggle, groupText);
+
+	const hint = h("div", { textContent: "Click an item to edit" });
+	hint.style.opacity = "0.7";
+	hint.style.fontSize = "12px";
+
+	controls.append(groupLabel, hint);
+
+	// Scroll container (fixed height)
+	const scroll = h("div");
+	scroll.style.maxHeight = "min(340px, calc(100vh - 420px))";
+	scroll.style.overflow = "auto";
+	scroll.style.paddingRight = "4px";
 
 	const list = h("div");
 	list.style.display = "flex";
 	list.style.flexDirection = "column";
 	list.style.gap = "8px";
+	scroll.appendChild(list);
+
+	let expandedId = null;
+
+	function rowMinimal(obj, bar) {
+		const row = h("div");
+		row.style.display = "flex";
+		row.style.alignItems = "center";
+		row.style.gap = "10px";
+
+		const badge = h("div", { textContent: String(obj.order ?? "") });
+		badge.style.minWidth = "28px";
+		badge.style.textAlign = "center";
+		badge.style.padding = "4px 6px";
+		badge.style.borderRadius = "10px";
+		badge.style.background = "rgba(255,255,255,0.06)";
+		badge.style.border = "1px solid rgba(255,255,255,0.10)";
+		badge.style.opacity = "0.9";
+		badge.style.fontSize = "12px";
+
+		const name = h("div", { textContent: obj.name });
+		name.style.flex = "0 0 auto";
+		name.style.fontWeight = "700";
+
+		const hpWrap = h("div");
+		hpWrap.style.display = "flex";
+		hpWrap.style.alignItems = "center";
+		hpWrap.style.gap = "8px";
+		hpWrap.style.flex = "1";
+
+		const hpLabel = h("div", { textContent: `${obj.hp}/${obj.hpMax}` });
+		hpLabel.style.opacity = "0.8";
+		hpLabel.style.fontSize = "12px";
+		hpLabel.style.minWidth = "56px";
+		hpLabel.style.textAlign = "right";
+
+		hpWrap.append(bar.outer, hpLabel);
+
+		row.append(badge, name, hpWrap);
+		return row;
+	}
+
+	function rowExpanded(obj, bar, card) {
+		const panel = h("div");
+		panel.style.marginTop = "10px";
+		panel.style.display = "flex";
+		panel.style.flexDirection = "column";
+		panel.style.gap = "8px";
+
+		// HP editor
+		const hpGrid = h("div");
+		hpGrid.style.display = "grid";
+		hpGrid.style.gridTemplateColumns = "1fr 1fr auto";
+		hpGrid.style.gap = "8px";
+		hpGrid.style.alignItems = "end";
+
+		const hpMaxInput = h("input", {
+			type: "number",
+			min: "1",
+			value: String(obj.hpMax),
+		});
+		const hpInput = h("input", {
+			type: "number",
+			min: "0",
+			value: String(obj.hp),
+		});
+		styleInput(hpMaxInput);
+		styleInput(hpInput);
+
+		const setHp = h("button", { textContent: "Set" });
+		styleButton(setHp, "primary");
+		setHp.style.width = "auto";
+		setHp.onclick = () => {
+			const max = Math.max(1, Math.trunc(Number(hpMaxInput.value) || 1));
+			const cur = Math.max(
+				0,
+				Math.min(max, Math.trunc(Number(hpInput.value) || 0)),
+			);
+			obj.hpMax = max;
+			obj.hp = cur;
+			bar.set(cur, max);
+			onChange?.();
+			refresh(); // keep label updated
+		};
+
+		hpGrid.append(
+			h("div", {}, [
+				h("div", {
+					textContent: "HP Max",
+					style: "opacity:.8;font-size:12px",
+				}),
+				hpMaxInput,
+			]),
+			h("div", {}, [
+				h("div", {
+					textContent: "HP",
+					style: "opacity:.8;font-size:12px",
+				}),
+				hpInput,
+			]),
+			setHp,
+		);
+
+		// Move editor
+		const posGrid = h("div");
+		posGrid.style.display = "grid";
+		posGrid.style.gridTemplateColumns = "1fr 1fr 1fr auto";
+		posGrid.style.gap = "8px";
+		posGrid.style.alignItems = "end";
+
+		const x = h("input", { type: "number", value: String(obj.pos.x) });
+		const y = h("input", { type: "number", value: String(obj.pos.y) });
+		const z = h("input", { type: "number", value: String(obj.pos.z) });
+		[x, y, z].forEach(styleInput);
+
+		const moveBtn = h("button", { textContent: "Move" });
+		styleButton(moveBtn, "primary");
+		moveBtn.style.width = "auto";
+		moveBtn.onclick = () => {
+			const raw = {
+				x: Math.trunc(Number(x.value) || 0),
+				y: Math.trunc(Number(y.value) || 0),
+				z: Math.trunc(Number(z.value) || 0),
+			};
+			const clamped = clampPosToMap(raw);
+			obj.pos = clamped;
+			x.value = String(clamped.x);
+			y.value = String(clamped.y);
+			z.value = String(clamped.z);
+			onChange?.();
+			refresh();
+		};
+
+		posGrid.append(
+			h("div", {}, [
+				h("div", {
+					textContent: "X",
+					style: "opacity:.8;font-size:12px",
+				}),
+				x,
+			]),
+			h("div", {}, [
+				h("div", {
+					textContent: "Y",
+					style: "opacity:.8;font-size:12px",
+				}),
+				y,
+			]),
+			h("div", {}, [
+				h("div", {
+					textContent: "Z",
+					style: "opacity:.8;font-size:12px",
+				}),
+				z,
+			]),
+			moveBtn,
+		);
+
+		// Order editor
+		const orderRow = h("div");
+		orderRow.style.display = "grid";
+		orderRow.style.gridTemplateColumns = "1fr auto";
+		orderRow.style.gap = "8px";
+		orderRow.style.alignItems = "end";
+
+		const orderInput = h("input", {
+			type: "number",
+			value: String(obj.order ?? ""),
+		});
+		styleInput(orderInput);
+
+		const setOrder = h("button", { textContent: "Set order" });
+		styleButton(setOrder);
+		setOrder.style.width = "auto";
+		setOrder.onclick = () => {
+			obj.order = Math.trunc(Number(orderInput.value) || 0);
+			onChange?.();
+			refresh();
+		};
+
+		orderRow.append(
+			h("div", {}, [
+				h("div", {
+					textContent: "Order",
+					style: "opacity:.8;font-size:12px",
+				}),
+				orderInput,
+			]),
+			setOrder,
+		);
+
+		// Delete
+		const del = h("button", { textContent: "Delete" });
+		styleButton(del, "danger");
+		del.onclick = () => {
+			const idx = state.objects.findIndex((o) => o.id === obj.id);
+			if (idx >= 0) state.objects.splice(idx, 1);
+			expandedId = null;
+			onDelete?.();
+		};
+
+		// Meta
+		const meta = h("div", {
+			textContent: `kind ${obj.kind} • size ${obj.sizeValue} • color ${obj.color} • label ${obj.labelEnabled ? "on" : "off"}`,
+		});
+		meta.style.opacity = "0.75";
+		meta.style.fontSize = "12px";
+
+		panel.append(hpGrid, posGrid, orderRow, del, meta);
+		return panel;
+	}
+
+	function renderGroup(title, objects) {
+		const group = h("div");
+		const groupHead = h("div", { textContent: title });
+		groupHead.style.opacity = "0.85";
+		groupHead.style.fontSize = "12px";
+		groupHead.style.margin = "6px 0 2px 0";
+		group.appendChild(groupHead);
+
+		for (const obj of objects) {
+			group.appendChild(renderCard(obj));
+		}
+
+		return group;
+	}
+
+	function renderCard(obj) {
+		const card = h("div");
+		card.style.padding = "10px";
+		card.style.borderRadius = "12px";
+		card.style.border = "1px solid rgba(255,255,255,0.12)";
+		card.style.background = "rgba(255,255,255,0.06)";
+		card.style.cursor = "pointer";
+		card.style.userSelect = "none";
+
+		const bar = makeHealthBar(obj.hp, obj.hpMax);
+		const minimal = rowMinimal(obj, bar);
+		card.appendChild(minimal);
+
+		const isExpanded = expandedId === obj.id;
+		if (isExpanded) {
+			card.style.background = "rgba(255,255,255,0.085)";
+			card.appendChild(rowExpanded(obj, bar, card));
+		}
+
+		card.onclick = (e) => {
+			// prevent clicking buttons inside from toggling twice
+			if (e.target?.tagName === "BUTTON" || e.target?.tagName === "INPUT")
+				return;
+			expandedId = expandedId === obj.id ? null : obj.id;
+			refresh();
+		};
+
+		return card;
+	}
 
 	function refresh() {
 		list.innerHTML = "";
 
-		if (state.objects.length === 0) {
+		const all = [...state.objects].sort(sortObjects);
+
+		if (all.length === 0) {
 			const empty = h("div", { textContent: "No objects placed yet." });
 			empty.style.opacity = "0.75";
 			list.appendChild(empty);
 			return;
 		}
 
-		for (const obj of state.objects) {
-			const card = h("div");
-			card.style.padding = "10px";
-			card.style.borderRadius = "12px";
-			card.style.border = "1px solid rgba(255,255,255,0.12)";
-			card.style.background = "rgba(255,255,255,0.06)";
-
-			// Title row
-			const top = h("div");
-			top.style.display = "flex";
-			top.style.justifyContent = "space-between";
-			top.style.gap = "10px";
-
-			const left = h("div");
-			const kind = obj.kind.toUpperCase();
-			const sizePart =
-				obj.kind === "env"
-					? `size ${obj.sizeValue}`
-					: `${obj.sizeKey} → ${obj.sizeValue}`;
-			left.textContent = `${kind}: ${obj.name} • ${sizePart}`;
-
-			const del = h("button", { textContent: "Delete" });
-			styleButton(del, "danger");
-			del.style.width = "auto";
-			del.onclick = () => {
-				const idx = state.objects.findIndex((o) => o.id === obj.id);
-				if (idx >= 0) state.objects.splice(idx, 1);
-				onDelete?.();
-			};
-
-			top.append(left, del);
-
-			// Health row (bar + edit)
-			const hpRow = h("div");
-			hpRow.style.marginTop = "8px";
-
-			const hp = Number.isFinite(obj.hp) ? obj.hp : (obj.hpMax ?? 10);
-			const hpMax = Number.isFinite(obj.hpMax) ? obj.hpMax : 10;
-
-			const bar = makeHealthBar(hp, hpMax);
-			hpRow.appendChild(bar.outer);
-			hpRow.appendChild(bar.label);
-
-			const hpInputs = h("div");
-			hpInputs.style.display = "grid";
-			hpInputs.style.gridTemplateColumns = "1fr 1fr auto";
-			hpInputs.style.gap = "8px";
-			hpInputs.style.marginTop = "6px";
-			hpInputs.style.alignItems = "end";
-
-			const hpMaxInput = h("input", {
-				type: "number",
-				min: "1",
-				value: String(hpMax),
-			});
-			const hpInput = h("input", {
-				type: "number",
-				min: "0",
-				value: String(hp),
-			});
-			styleInput(hpMaxInput);
-			styleInput(hpInput);
-
-			const applyHp = h("button", { textContent: "Set HP" });
-			styleButton(applyHp, "primary");
-			applyHp.style.width = "auto";
-			applyHp.onclick = () => {
-				const max = Math.max(
-					1,
-					Math.trunc(Number(hpMaxInput.value) || 1),
-				);
-				const cur = Math.max(
-					0,
-					Math.min(max, Math.trunc(Number(hpInput.value) || 0)),
-				);
-				obj.hpMax = max;
-				obj.hp = cur;
-				bar.set(cur, max);
-				onChange?.();
-			};
-
-			hpInputs.append(
-				h("div", {}, [
-					h("div", {
-						textContent: "HP Max",
-						style: "opacity:.85;font-size:12px",
-					}),
-					hpMaxInput,
-				]),
-				h("div", {}, [
-					h("div", {
-						textContent: "HP",
-						style: "opacity:.85;font-size:12px",
-					}),
-					hpInput,
-				]),
-				applyHp,
-			);
-
-			// Move row
-			const moveRow = h("div");
-			moveRow.style.marginTop = "10px";
-			moveRow.style.display = "grid";
-			moveRow.style.gridTemplateColumns = "1fr 1fr 1fr auto";
-			moveRow.style.gap = "8px";
-			moveRow.style.alignItems = "end";
-
-			const x = h("input", { type: "number", value: String(obj.pos.x) });
-			const y = h("input", { type: "number", value: String(obj.pos.y) });
-			const z = h("input", { type: "number", value: String(obj.pos.z) });
-			[x, y, z].forEach(styleInput);
-
-			const moveBtn = h("button", { textContent: "Move" });
-			styleButton(moveBtn, "primary");
-			moveBtn.style.width = "auto";
-			moveBtn.onclick = () => {
-				const raw = {
-					x: Math.trunc(Number(x.value) || 0),
-					y: Math.trunc(Number(y.value) || 0),
-					z: Math.trunc(Number(z.value) || 0),
-				};
-				const clamped = clampPosToMap(raw);
-				obj.pos = clamped;
-				x.value = String(clamped.x);
-				y.value = String(clamped.y);
-				z.value = String(clamped.z);
-				onChange?.();
-			};
-
-			// Meta line
-			const meta = h("div");
-			meta.style.marginTop = "8px";
-			meta.style.opacity = "0.85";
-			meta.style.fontSize = "12px";
-			meta.textContent = `pos (${obj.pos.x}, ${obj.pos.y}, ${obj.pos.z}) • color ${obj.color} • label ${
-				obj.labelEnabled ? "on" : "off"
-			}`;
-
-			card.append(
-				top,
-				hpRow,
-				hpInputs,
-				h("div", {
-					style: "margin-top:10px;opacity:.85;font-size:12px",
-					textContent: "Move position (anchor):",
-				}),
-				moveRow,
-				moveBtn,
-				meta,
-			);
-
-			// Small tweak: put moveBtn inline with inputs in the grid
-			moveRow.append(
-				h("div", {}, [
-					h("div", {
-						textContent: "X",
-						style: "opacity:.85;font-size:12px",
-					}),
-					x,
-				]),
-				h("div", {}, [
-					h("div", {
-						textContent: "Y",
-						style: "opacity:.85;font-size:12px",
-					}),
-					y,
-				]),
-				h("div", {}, [
-					h("div", {
-						textContent: "Z",
-						style: "opacity:.85;font-size:12px",
-					}),
-					z,
-				]),
-				moveBtn,
-			);
-
-			list.appendChild(card);
+		if (!groupToggle.checked) {
+			for (const obj of all) list.appendChild(renderCard(obj));
+			return;
 		}
+
+		const players = all.filter((o) => o.kind === "player");
+		const enemies = all.filter((o) => o.kind === "enemy");
+		const env = all.filter((o) => o.kind === "env");
+
+		if (players.length)
+			list.appendChild(renderGroup(kindLabel("player"), players));
+		if (enemies.length)
+			list.appendChild(renderGroup(kindLabel("enemy"), enemies));
+		if (env.length) list.appendChild(renderGroup(kindLabel("env"), env));
 	}
+
+	groupToggle.onchange = () => refresh();
 
 	refresh();
 
-	const el = h("div", {}, [header, list]);
+	const el = h("div", {}, [header, controls, scroll]);
 	return { el, refresh };
 }

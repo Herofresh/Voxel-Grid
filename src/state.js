@@ -27,11 +27,18 @@ export const state = {
 };
 
 let _idCounter = 1;
+let _orderCounter = 1;
 
 function nextId(prefix = "obj") {
 	const id = `${prefix}_${String(_idCounter).padStart(4, "0")}`;
 	_idCounter += 1;
 	return id;
+}
+
+function nextOrder() {
+	const n = _orderCounter;
+	_orderCounter += 1;
+	return n;
 }
 
 function clampInt(v, min, max) {
@@ -102,6 +109,8 @@ export function createObject({
 		// Health
 		hp,
 		hpMax,
+
+		order: nextOrder(),
 	};
 
 	return ensureHp(obj);
@@ -172,6 +181,7 @@ export function validateAndLoadState(raw) {
 
 			hp: Number.isFinite(o.hp) ? Math.trunc(o.hp) : undefined,
 			hpMax: Number.isFinite(o.hpMax) ? Math.trunc(o.hpMax) : undefined,
+			order: Number.isFinite(o.order) ? Math.trunc(o.order) : idx + 1,
 		};
 
 		return ensureHp(obj);
@@ -181,6 +191,12 @@ export function validateAndLoadState(raw) {
 	for (const o of state.objects) {
 		const m = String(o.id).match(/_(\d+)$/);
 		if (m) _idCounter = Math.max(_idCounter, Number(m[1]) + 1);
+	}
+
+	// keep order counter ahead
+	for (const o of state.objects) {
+		if (Number.isFinite(o.order))
+			_orderCounter = Math.max(_orderCounter, o.order + 1);
 	}
 
 	return true;

@@ -1,6 +1,6 @@
 // src/ui/index.js
 import { state } from "../state.js";
-import { h, divider } from "./styles.js";
+import { h, divider, styleButton } from "./styles.js";
 
 import { createMapSizePanel } from "./panels/mapSize.js";
 import { createObjectListPanel } from "./panels/objectList.js";
@@ -8,14 +8,20 @@ import { createAddPanel } from "./panels/add.js";
 import { createIOPanel } from "./panels/io.js";
 import { createShufflePanel } from "./panels/shuffle.js";
 
+function makeTabButton(label, active = false) {
+	const b = h("button", { textContent: label });
+	styleButton(b, active ? "primary" : "neutral");
+	b.style.width = "auto";
+	b.style.flex = "1";
+	return b;
+}
+
 export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	const root = document.createElement("div");
 	root.style.position = "absolute";
 	root.style.top = "12px";
 	root.style.right = "12px";
-	root.style.width = "360px";
-	root.style.maxHeight = "calc(100vh - 24px)";
-	root.style.overflow = "auto";
+	root.style.width = "380px";
 	root.style.padding = "12px";
 	root.style.borderRadius = "14px";
 	root.style.background = "rgba(0,0,0,0.62)";
@@ -30,6 +36,20 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	title.style.fontSize = "16px";
 	title.style.marginBottom = "10px";
 
+	// Tabs
+	const tabRow = h("div");
+	tabRow.style.display = "flex";
+	tabRow.style.gap = "8px";
+	tabRow.style.marginBottom = "10px";
+
+	const tabObjectsBtn = makeTabButton("Objects", true);
+	const tabMapBtn = makeTabButton("Map & JSON", false);
+	const tabFeaturesBtn = makeTabButton("Features", false);
+	tabRow.append(tabObjectsBtn, tabMapBtn, tabFeaturesBtn);
+
+	const content = h("div");
+
+	// Panels / sub-panels
 	const mapSizePanel = createMapSizePanel({
 		state,
 		onApply: () => {
@@ -77,19 +97,43 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 		},
 	});
 
-	root.append(
-		title,
-		mapSizePanel.el,
-		divider(),
-		objectListPanel.el,
-		divider(),
-		addPanel.el,
-		divider(),
-		shufflePanel.el,
-		divider(),
-		ioPanel.el,
-	);
+	// Tab containers
+	const tabObjects = h("div");
+	// Object list has its own scroll. Keep the tab itself non-scroll.
+	tabObjects.append(objectListPanel.el, divider(), addPanel.el);
 
+	const tabMap = h("div");
+	tabMap.append(mapSizePanel.el, divider(), ioPanel.el);
+
+	const tabFeatures = h("div");
+	tabFeatures.append(shufflePanel.el);
+
+	function setActive(tabName) {
+		// swap content
+		content.innerHTML = "";
+		if (tabName === "objects") content.appendChild(tabObjects);
+		if (tabName === "map") content.appendChild(tabMap);
+		if (tabName === "features") content.appendChild(tabFeatures);
+
+		// button styling
+		styleButton(
+			tabObjectsBtn,
+			tabName === "objects" ? "primary" : "neutral",
+		);
+		styleButton(tabMapBtn, tabName === "map" ? "primary" : "neutral");
+		styleButton(
+			tabFeaturesBtn,
+			tabName === "features" ? "primary" : "neutral",
+		);
+	}
+
+	tabObjectsBtn.onclick = () => setActive("objects");
+	tabMapBtn.onclick = () => setActive("map");
+	tabFeaturesBtn.onclick = () => setActive("features");
+
+	setActive("objects");
+
+	root.append(title, tabRow, content);
 	document.body.appendChild(root);
 
 	return {
