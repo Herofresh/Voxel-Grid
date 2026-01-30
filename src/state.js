@@ -267,3 +267,39 @@ export function isAnchorInBoundsForSize(anchor, sizeValue) {
 		anchor.z + s - 1 <= state.map.sizeZ - 1
 	);
 }
+
+export function isSpaceFreeAt(anchor, sizeValue, ignoreIds = []) {
+	const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+	if (!isAnchorInBoundsForSize(anchor, s)) return false;
+
+	const ignore = new Set(
+		Array.isArray(ignoreIds) ? ignoreIds : [ignoreIds],
+	);
+
+	for (const obj of state.objects) {
+		if (ignore.has(obj.id)) continue;
+		const o = obj.pos;
+		const os = Math.max(1, Math.trunc(Number(obj.sizeValue) || 1));
+
+		const overlap =
+			anchor.x <= o.x + os - 1 &&
+			anchor.x + s - 1 >= o.x &&
+			anchor.y <= o.y + os - 1 &&
+			anchor.y + s - 1 >= o.y &&
+			anchor.z <= o.z + os - 1 &&
+			anchor.z + s - 1 >= o.z;
+
+		if (overlap) return false;
+	}
+
+	return true;
+}
+
+export function findLowestFreeAnchor({ x, z }, sizeValue, ignoreIds = []) {
+	const s = Math.max(1, Math.trunc(Number(sizeValue) || 1));
+	for (let y = 0; y <= state.map.sizeY - s; y++) {
+		const anchor = { x, y, z };
+		if (isSpaceFreeAt(anchor, s, ignoreIds)) return anchor;
+	}
+	return null;
+}

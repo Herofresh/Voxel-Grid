@@ -1,6 +1,11 @@
 // src/ui/panels/add.js
 import { h, styleButton, styleInput } from "../styles.js";
-import { SIZE_MAPS, createObject } from "../../state.js";
+import {
+	SIZE_MAPS,
+	createObject,
+	findLowestFreeAnchor,
+	isSpaceFreeAt,
+} from "../../state.js";
 
 function clampInt(v, min, max) {
 	const n = Math.trunc(Number(v) || 0);
@@ -241,6 +246,7 @@ export function createAddPanel({
 
 				let placed = 0;
 				let skipped = 0;
+				let blocked = 0;
 
 				for (let ox = 0; ox < nx; ox++) {
 					for (let oy = 0; oy < ny; oy++) {
@@ -251,6 +257,16 @@ export function createAddPanel({
 
 							if (!withinMap(px, py, pz)) {
 								skipped += 1;
+								continue;
+							}
+
+							if (
+								!isSpaceFreeAt(
+									{ x: px, y: py, z: pz },
+									1,
+								)
+							) {
+								blocked += 1;
 								continue;
 							}
 
@@ -274,8 +290,8 @@ export function createAddPanel({
 				}
 
 				warn.textContent =
-					skipped > 0
-						? `Placed ${placed} cubes, skipped ${skipped} (out of bounds).`
+					skipped > 0 || blocked > 0
+						? `Placed ${placed} cubes, skipped ${skipped} (out of bounds), blocked ${blocked} (occupied).`
 						: `Placed ${placed} cubes.`;
 
 				onChange?.();
@@ -283,18 +299,33 @@ export function createAddPanel({
 			}
 
 			const map = SIZE_MAPS[kind];
+			const sizeValue = map[sizeSelect.value];
+			const candidate = findLowestFreeAnchor(
+				{ x: anchor.x, z: anchor.z },
+				sizeValue,
+			);
+			if (!candidate) {
+				warn.textContent =
+					"No free space at that X/Z (blocked or out of bounds).";
+				return;
+			}
+
 			state.objects.push(
 				createObject({
 					kind,
 					name: name.value,
 					sizeKey: sizeSelect?.value,
 					color: color.value,
-					pos: anchor,
+					pos: candidate,
 					labelEnabled: labelEnabled.checked,
 					hp: Number(hp.value),
 					hpMax: Number(hpMax.value),
 				}),
 			);
+
+			x.value = String(candidate.x);
+			y.value = String(candidate.y);
+			z.value = String(candidate.z);
 
 			warn.textContent = "";
 			onChange?.();

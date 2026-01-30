@@ -300,6 +300,7 @@ export function createSceneApp({
 	let dragId = null;
 	let dragSizeValue = 1;
 	let dragAnchor = null;
+	let dragStartPos = null;
 	const CLICK_MOVE_TOLERANCE_PX = 6;
 
 	renderer.domElement.addEventListener("pointerdown", (e) => {
@@ -316,6 +317,7 @@ export function createSceneApp({
 			dragId = mesh.userData?.id ?? null;
 			dragSizeValue = mesh.userData?.sizeValue ?? 1;
 			dragAnchor = mesh.userData?.pos ?? null;
+			dragStartPos = mesh.userData?.pos ?? null;
 			controls.enabled = false;
 		}
 	});
@@ -350,7 +352,11 @@ export function createSceneApp({
 		if (dragActive && dragMesh) {
 			const id = dragId;
 			if (dragMoved && id && dragAnchor) {
-				onObjectMove?.({ id, pos: { ...dragAnchor } });
+				onObjectMove?.({
+					id,
+					pos: { ...dragAnchor },
+					prevPos: dragStartPos ? { ...dragStartPos } : null,
+				});
 			} else if (id) {
 				onObjectClick?.(id);
 			}
@@ -367,6 +373,7 @@ export function createSceneApp({
 			dragMesh = null;
 			dragId = null;
 			dragAnchor = null;
+			dragStartPos = null;
 			controls.enabled = true;
 		}
 	});

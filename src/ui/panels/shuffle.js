@@ -1,6 +1,6 @@
 // src/ui/panels/shuffle.js
 import { h, styleButton, styleInput } from "../styles.js";
-import { isAnchorInBoundsForSize } from "../../state.js";
+import { isAnchorInBoundsForSize, isSpaceFreeAt } from "../../state.js";
 
 function randInt(min, max) {
 	const a = Math.min(min, max);
@@ -93,6 +93,11 @@ export function createShufflePanel({ state, onChange } = {}) {
 
 		if (!isAnchorInBoundsForSize(aNew, a.sizeValue)) return false;
 		if (!isAnchorInBoundsForSize(bNew, b.sizeValue)) return false;
+		if (
+			!isSpaceFreeAt(aNew, a.sizeValue, [a.id, b.id]) ||
+			!isSpaceFreeAt(bNew, b.sizeValue, [a.id, b.id])
+		)
+			return false;
 
 		// Perform swap
 		const aOld = a.pos;

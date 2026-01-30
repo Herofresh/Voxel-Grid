@@ -1,6 +1,6 @@
 // src/ui/panels/objectList.js
 import { h, styleButton, styleInput } from "../styles.js";
-import { clampPosToMap, normalizeOrders } from "../../state.js";
+import { clampPosToMap, normalizeOrders, isSpaceFreeAt } from "../../state.js";
 
 function makeHealthBar(hp, hpMax) {
 	const outer = document.createElement("div");
@@ -346,6 +346,7 @@ export function createObjectListPanel({ state, onDelete, onChange } = {}) {
 				z: Math.trunc(Number(z.value) || 0),
 			};
 			const clamped = clampPosToMap(raw);
+			if (!isSpaceFreeAt(clamped, obj.sizeValue, obj.id)) return;
 			obj.pos = clamped;
 			x.value = String(clamped.x);
 			y.value = String(clamped.y);

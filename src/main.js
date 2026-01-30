@@ -1,7 +1,13 @@
 // src/main.js
 import "./style.css";
 
-import { state, serializeState, validateAndLoadState } from "./state.js";
+import {
+	state,
+	serializeState,
+	validateAndLoadState,
+	findLowestFreeAnchor,
+	isSpaceFreeAt,
+} from "./state.js";
 import { createSceneApp } from "./scene/index.js";
 import { mountUI } from "./ui/index.js";
 import { loadStateFromLocalStorage, createAutoSaver } from "./persistence.js";
@@ -23,10 +29,21 @@ const app = createSceneApp({
 	onObjectClick: (id) => ui?.openObjectById?.(id),
 
 	// Drag a player/enemy to a new anchor position
-	onObjectMove: ({ id, pos }) => {
+	onObjectMove: ({ id, pos, prevPos }) => {
 		const obj = state.objects.find((o) => o.id === id);
 		if (!obj) return;
-		obj.pos = { ...pos };
+		const target = findLowestFreeAnchor(
+			{ x: pos.x, z: pos.z },
+			obj.sizeValue,
+			id,
+		);
+		if (!target || !isSpaceFreeAt(target, obj.sizeValue, id)) {
+			if (prevPos) obj.pos = { ...prevPos };
+			app.renderFromState(state);
+			ui?.refresh?.();
+			return;
+		}
+		obj.pos = { ...target };
 		app.renderFromState(state);
 		autosaver.scheduleSave();
 		ui?.refresh?.();
