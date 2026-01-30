@@ -15,11 +15,15 @@ const autosaver = createAutoSaver({ serializeState, delayMs: 250 });
 let ui = null;
 
 const app = createSceneApp({
-	onCellClick: (cell) => ui?.setPlacementPosition(cell),
-	onObjectClick: (id) => ui?.openObjectById(id),
+	// In add mode, click should PLACE.
+	// Otherwise it can still be used to set inputs (but we place by default).
+	onCellClick: (cell) => ui?.placeCurrentAtCell?.(cell),
+
+	// Click a cube (not in add mode) selects it and opens it in the list
+	onObjectClick: (id) => ui?.openObjectById?.(id),
 });
 
-// Render initial (restored or default) state
+// Render initial state
 app.renderFromState(state);
 
 ui = mountUI({
@@ -28,5 +32,5 @@ ui = mountUI({
 		autosaver.scheduleSave();
 	},
 	onModeChange: (isAdding) => app.setMode({ isAdding }),
-	onPreviewChange: ({ sizeValue }) => app.setPlacementPreview({ sizeValue }),
+	onPreviewChange: (payload) => app.setPlacementPreview(payload),
 });

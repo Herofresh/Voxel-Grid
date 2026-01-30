@@ -47,9 +47,6 @@ function clampInt(v, min, max) {
 }
 
 function ensureHp(obj) {
-	// Default rules:
-	// - players/enemies default to 10 max
-	// - env default to 1 max (but you can change)
 	const defaultMax = obj.kind === "env" ? 1 : 10;
 
 	const hpMax =
@@ -65,6 +62,16 @@ function ensureHp(obj) {
 	return obj;
 }
 
+function normalizeStructurePath(p) {
+	if (!p) return null;
+	const cleaned = String(p)
+		.split("/")
+		.map((s) => s.trim())
+		.filter(Boolean)
+		.join("/");
+	return cleaned.length ? cleaned : null;
+}
+
 export function createObject({
 	kind,
 	name,
@@ -75,6 +82,13 @@ export function createObject({
 	envSizeValue = null,
 	hp = null,
 	hpMax = null,
+
+	// Optional ordering override
+	order = null,
+
+	// Folder-like structure path (env only, but we keep it optional)
+	// Example: "Castle/Walls/North"
+	structurePath = null,
 } = {}) {
 	const safeKind = kind === "enemy" || kind === "env" ? kind : "player";
 
@@ -88,7 +102,7 @@ export function createObject({
 		id: nextId(safeKind[0]),
 		kind: safeKind,
 		name: String(
-			name || (safeKind === "env" ? "Environment" : safeKind),
+			name || (safeKind === "env" ? "Env Cube" : safeKind),
 		).trim(),
 		pos: {
 			x: Math.max(0, Math.trunc(pos?.x ?? 0)),
@@ -110,14 +124,17 @@ export function createObject({
 		hp,
 		hpMax,
 
-		order: nextOrder(),
+		// Ordering (players/enemies use this; env can keep it but UI can hide it)
+		order: Number.isFinite(order) ? Math.trunc(order) : nextOrder(),
+
+		// Folder path (null = not in a structure)
+		structurePath: normalizeStructurePath(structurePath),
 	};
 
 	return ensureHp(obj);
 }
 
 export function serializeState() {
-	// Always export the current in-memory state in a stable shape
 	return {
 		version: 1,
 		map: {
@@ -165,6 +182,14 @@ export function validateAndLoadState(raw) {
 					? 1
 					: (SIZE_MAPS[kind][sizeKey] ?? 1);
 
+		// Back-compat: if you had structureName/Id before, treat structureName as a top folder
+		const legacyStructure =
+			typeof o.structurePath === "string"
+				? o.structurePath
+				: typeof o.structureName === "string"
+					? o.structureName
+					: null;
+
 		const obj = {
 			id: typeof o.id === "string" ? o.id : `obj_${idx}`,
 			kind,
@@ -181,20 +206,19 @@ export function validateAndLoadState(raw) {
 
 			hp: Number.isFinite(o.hp) ? Math.trunc(o.hp) : undefined,
 			hpMax: Number.isFinite(o.hpMax) ? Math.trunc(o.hpMax) : undefined,
+
 			order: Number.isFinite(o.order) ? Math.trunc(o.order) : idx + 1,
+
+			structurePath: normalizeStructurePath(legacyStructure),
 		};
 
 		return ensureHp(obj);
 	});
 
-	// keep id counter ahead (best-effort)
+	// keep counters ahead (best-effort)
 	for (const o of state.objects) {
 		const m = String(o.id).match(/_(\d+)$/);
 		if (m) _idCounter = Math.max(_idCounter, Number(m[1]) + 1);
-	}
-
-	// keep order counter ahead
-	for (const o of state.objects) {
 		if (Number.isFinite(o.order))
 			_orderCounter = Math.max(_orderCounter, o.order + 1);
 	}

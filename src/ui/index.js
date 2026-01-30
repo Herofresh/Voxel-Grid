@@ -22,6 +22,11 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	root.style.top = "12px";
 	root.style.right = "12px";
 	root.style.width = "380px";
+	root.style.maxHeight = "calc(100vh - 24px)"; // ✅ never exceed viewport
+	root.style.display = "flex"; // ✅ allow internal scrolling layout
+	root.style.flexDirection = "column";
+	root.style.overflow = "hidden"; // content scrolls instead
+
 	root.style.padding = "12px";
 	root.style.borderRadius = "14px";
 	root.style.background = "rgba(0,0,0,0.62)";
@@ -35,21 +40,25 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 	title.style.fontWeight = "800";
 	title.style.fontSize = "16px";
 	title.style.marginBottom = "10px";
+	title.style.flex = "0 0 auto";
 
-	// Tabs
 	const tabRow = h("div");
 	tabRow.style.display = "flex";
 	tabRow.style.gap = "8px";
 	tabRow.style.marginBottom = "10px";
+	tabRow.style.flex = "0 0 auto";
 
 	const tabObjectsBtn = makeTabButton("Objects", true);
 	const tabMapBtn = makeTabButton("Map & JSON", false);
 	const tabFeaturesBtn = makeTabButton("Features", false);
 	tabRow.append(tabObjectsBtn, tabMapBtn, tabFeaturesBtn);
 
+	// ✅ content area scrolls if too tall
 	const content = h("div");
+	content.style.flex = "1 1 auto";
+	content.style.overflow = "auto";
+	content.style.paddingRight = "4px";
 
-	// Panels
 	const mapSizePanel = createMapSizePanel({
 		state,
 		onApply: () => {
@@ -97,7 +106,6 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 		},
 	});
 
-	// Tab containers
 	const tabObjects = h("div");
 	tabObjects.append(objectListPanel.el, divider(), addPanel.el);
 
@@ -109,7 +117,6 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 
 	function setActive(tabName) {
 		content.innerHTML = "";
-
 		if (tabName === "objects") content.appendChild(tabObjects);
 		if (tabName === "map") content.appendChild(tabMap);
 		if (tabName === "features") content.appendChild(tabFeatures);
@@ -141,6 +148,7 @@ export function mountUI({ onChange, onModeChange, onPreviewChange } = {}) {
 
 	return {
 		setPlacementPosition: addPanel.setPlacementPosition,
+		placeCurrentAtCell: addPanel.placeCurrentAtCell,
 		openObjectById,
 	};
 }

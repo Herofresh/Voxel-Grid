@@ -1,51 +1,46 @@
 // src/scene/cursor.js
 import * as THREE from "three";
 
+/**
+ * Cursor = wireframe box used for placement preview.
+ * Supports non-uniform scaling (x/y/z).
+ */
 export function createCursor(scene) {
-	const cursorGroup = new THREE.Group();
+	const geo = new THREE.BoxGeometry(1, 1, 1);
+	const mat = new THREE.MeshBasicMaterial({
+		color: 0xffffff,
+		wireframe: true,
+		transparent: true,
+		opacity: 0.9,
+	});
+	const mesh = new THREE.Mesh(geo, mat);
 
-	const cursorFill = new THREE.Mesh(
-		new THREE.BoxGeometry(1, 1, 1),
-		new THREE.MeshBasicMaterial({
-			color: 0xffffff,
-			transparent: true,
-			opacity: 0.06,
-			depthTest: false,
-			depthWrite: false,
-		}),
-	);
-	cursorFill.renderOrder = 999;
+	mesh.visible = false;
+	scene.add(mesh);
 
-	const cursorEdges = new THREE.LineSegments(
-		new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-		new THREE.LineBasicMaterial({
-			color: 0xffffff,
-			transparent: true,
-			opacity: 0.95,
-			depthTest: false,
-			depthWrite: false,
-		}),
-	);
-	cursorEdges.renderOrder = 1000;
-
-	cursorGroup.add(cursorFill);
-	cursorGroup.add(cursorEdges);
-	cursorGroup.visible = false;
-	cursorGroup.position.set(0, 0.01, 0);
-
-	scene.add(cursorGroup);
-
-	return { cursorGroup };
+	return { mesh };
 }
 
 export function setCursorVisible(cursor, visible) {
-	cursor.cursorGroup.visible = Boolean(visible);
+	cursor.mesh.visible = Boolean(visible);
 }
 
-export function setCursorScale(cursor, s) {
-	cursor.cursorGroup.scale.set(s, s, s);
+export function setCursorPosition(cursor, { x, y, z }) {
+	cursor.mesh.position.set(x, y, z);
 }
 
-export function setCursorPosition(cursor, v3) {
-	cursor.cursorGroup.position.set(v3.x, v3.y, v3.z);
+/**
+ * scale can be a number (uniform) or {x,y,z} (non-uniform)
+ */
+export function setCursorScale(cursor, scale) {
+	if (typeof scale === "number") {
+		const s = Math.max(1, Math.trunc(scale || 1));
+		cursor.mesh.scale.set(s, s, s);
+		return;
+	}
+
+	const sx = Math.max(1, Math.trunc(Number(scale?.x) || 1));
+	const sy = Math.max(1, Math.trunc(Number(scale?.y) || 1));
+	const sz = Math.max(1, Math.trunc(Number(scale?.z) || 1));
+	cursor.mesh.scale.set(sx, sy, sz);
 }

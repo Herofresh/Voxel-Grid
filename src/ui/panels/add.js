@@ -2,6 +2,11 @@
 import { h, styleButton, styleInput } from "../styles.js";
 import { SIZE_MAPS, createObject } from "../../state.js";
 
+function clampInt(v, min, max) {
+	const n = Math.trunc(Number(v) || 0);
+	return Math.max(min, Math.min(max, n));
+}
+
 export function createAddPanel({
 	state,
 	onChange,
@@ -9,7 +14,7 @@ export function createAddPanel({
 	onPreviewChange,
 } = {}) {
 	let activeAddKind = null;
-	const posInputsByKind = new Map();
+	let currentForm = null;
 
 	const addButtonsHeader = h("div", { textContent: "Add…" });
 	addButtonsHeader.style.fontWeight = "800";
@@ -22,7 +27,7 @@ export function createAddPanel({
 
 	const btnAddPlayer = h("button", { textContent: "Player" });
 	const btnAddEnemy = h("button", { textContent: "Enemy" });
-	const btnAddEnv = h("button", { textContent: "Env" });
+	const btnAddEnv = h("button", { textContent: "Env (Folder)" });
 	[btnAddPlayer, btnAddEnemy, btnAddEnv].forEach((b) =>
 		styleButton(b, "primary"),
 	);
@@ -31,107 +36,54 @@ export function createAddPanel({
 	const addPanel = h("div");
 	addPanel.style.display = "none";
 
-	function clampToBounds(x, y, z) {
+	function clampToBounds(pos) {
 		return {
-			x: Math.max(0, Math.min(state.map.sizeX - 1, x)),
-			y: Math.max(0, Math.min(state.map.sizeY - 1, y)),
-			z: Math.max(0, Math.min(state.map.sizeZ - 1, z)),
+			x: clampInt(pos.x, 0, state.map.sizeX - 1),
+			y: clampInt(pos.y ?? 0, 0, state.map.sizeY - 1),
+			z: clampInt(pos.z, 0, state.map.sizeZ - 1),
 		};
 	}
 
-	function posRow(kind) {
-		const x = h("input", { type: "number", placeholder: "x" });
-		const y = h("input", { type: "number", placeholder: "y", value: "0" });
-		const z = h("input", { type: "number", placeholder: "z" });
-		[x, y, z].forEach(styleInput);
-
-		const row = h("div");
-		row.style.display = "grid";
-		row.style.gridTemplateColumns = "1fr 1fr 1fr";
-		row.style.gap = "8px";
-		row.append(x, y, z);
-
-		posInputsByKind.set(kind, { x, y, z });
-		return row;
-	}
-
-	function hpRow(defaultMax = 10) {
-		const hpMax = h("input", {
-			type: "number",
-			min: "1",
-			value: String(defaultMax),
-		});
-		const hp = h("input", {
-			type: "number",
-			min: "0",
-			value: String(defaultMax),
-		});
-		[hpMax, hp].forEach(styleInput);
-
-		const row = h("div");
-		row.style.display = "grid";
-		row.style.gridTemplateColumns = "1fr 1fr";
-		row.style.gap = "8px";
-
-		row.append(
-			h("div", {}, [h("div", { textContent: "HP Max" }), hpMax]),
-			h("div", {}, [h("div", { textContent: "HP" }), hp]),
+	function withinMap(x, y, z) {
+		return (
+			x >= 0 &&
+			y >= 0 &&
+			z >= 0 &&
+			x < state.map.sizeX &&
+			y < state.map.sizeY &&
+			z < state.map.sizeZ
 		);
-
-		return { row, hp, hpMax };
 	}
 
 	function buildAddForm(kind) {
 		addPanel.innerHTML = "";
+		currentForm = null;
 
 		const header = h("div", {
-			textContent: `Adding ${kind.toUpperCase()} (click grid to fill position)`,
+			textContent: `Add mode: Click the grid to place ${kind.toUpperCase()}`,
 		});
 		header.style.fontWeight = "800";
 		header.style.marginBottom = "8px";
 
-		const name = h("input", { placeholder: "Name" });
+		const name = h("input", {
+			placeholder: kind === "env" ? "Cube name (e.g. Wall)" : "Name",
+		});
 		styleInput(name);
 
-		let sizeSelect = null;
-		let envSize = null;
-
-		if (kind === "player" || kind === "enemy") {
-			sizeSelect = h("select");
-			styleInput(sizeSelect);
-			const map = SIZE_MAPS[kind];
-
-			for (const key of Object.keys(map)) {
-				sizeSelect.appendChild(
-					h("option", {
-						value: key,
-						textContent: `${key} (→ ${map[key]})`,
-					}),
-				);
-			}
-
-			onPreviewChange?.({ sizeValue: map[sizeSelect.value] });
-
-			sizeSelect.onchange = () => {
-				onPreviewChange?.({ sizeValue: map[sizeSelect.value] });
-			};
-		} else {
-			envSize = h("input", { type: "number", min: "1", value: "1" });
-			styleInput(envSize);
-
-			onPreviewChange?.({ sizeValue: 1 });
-
-			envSize.oninput = () => {
-				const sizeValue = Math.max(1, Number(envSize.value) || 1);
-				onPreviewChange?.({ sizeValue });
-			};
-		}
-
-		const posLabel = h("div", { textContent: "Position (x,y,z)" });
+		const posLabel = h("div", { textContent: "Anchor position (x,y,z)" });
 		posLabel.style.marginTop = "8px";
 		posLabel.style.opacity = "0.9";
 
-		const pos = posRow(kind);
+		const x = h("input", { type: "number", placeholder: "x", value: "0" });
+		const y = h("input", { type: "number", placeholder: "y", value: "0" });
+		const z = h("input", { type: "number", placeholder: "z", value: "0" });
+		[x, y, z].forEach(styleInput);
+
+		const posRow = h("div");
+		posRow.style.display = "grid";
+		posRow.style.gridTemplateColumns = "1fr 1fr 1fr";
+		posRow.style.gap = "8px";
+		posRow.append(x, y, z);
 
 		const labelRow = h("label");
 		labelRow.style.display = "flex";
@@ -164,57 +116,213 @@ export function createAddPanel({
 		colorRow.style.alignItems = "center";
 		colorRow.append(h("div", { textContent: "Color" }), color);
 
-		// Health inputs (env defaults lower)
-		const hpDefaults = kind === "env" ? 1 : 10;
-		const hpBlock = hpRow(hpDefaults);
-		hpBlock.row.style.marginTop = "10px";
+		const hpMax = h("input", {
+			type: "number",
+			min: "1",
+			value: String(kind === "env" ? 1 : 10),
+		});
+		const hp = h("input", {
+			type: "number",
+			min: "0",
+			value: String(kind === "env" ? 1 : 10),
+		});
+		[hpMax, hp].forEach(styleInput);
+
+		const hpGrid = h("div");
+		hpGrid.style.display = "grid";
+		hpGrid.style.gridTemplateColumns = "1fr 1fr";
+		hpGrid.style.gap = "8px";
+		hpGrid.style.marginTop = "10px";
+		hpGrid.append(
+			h("div", {}, [h("div", { textContent: "HP Max" }), hpMax]),
+			h("div", {}, [h("div", { textContent: "HP" }), hp]),
+		);
+
+		let sizeSelect = null;
+
+		let structurePath = null;
+		let dxIn = null,
+			dyIn = null,
+			dzIn = null;
+
+		function readDims() {
+			return {
+				x: Math.max(1, Math.trunc(Number(dxIn?.value) || 1)),
+				y: Math.max(1, Math.trunc(Number(dyIn?.value) || 1)),
+				z: Math.max(1, Math.trunc(Number(dzIn?.value) || 1)),
+			};
+		}
+
+		if (kind === "player" || kind === "enemy") {
+			sizeSelect = h("select");
+			styleInput(sizeSelect);
+
+			const map = SIZE_MAPS[kind];
+			for (const key of Object.keys(map)) {
+				sizeSelect.appendChild(
+					h("option", {
+						value: key,
+						textContent: `${key} (→ ${map[key]})`,
+					}),
+				);
+			}
+
+			onPreviewChange?.({ sizeValue: map[sizeSelect.value] });
+			sizeSelect.onchange = () =>
+				onPreviewChange?.({ sizeValue: map[sizeSelect.value] });
+		} else {
+			// ENV: folder path + dims drive preview
+			structurePath = h("input", {
+				placeholder: "Structure folder path (e.g. Castle/Walls/North)",
+			});
+			styleInput(structurePath);
+
+			dxIn = h("input", { type: "number", min: "1", value: "3" });
+			dyIn = h("input", { type: "number", min: "1", value: "2" });
+			dzIn = h("input", { type: "number", min: "1", value: "3" });
+			[dxIn, dyIn, dzIn].forEach(styleInput);
+
+			const dimGrid = h("div");
+			dimGrid.style.display = "grid";
+			dimGrid.style.gridTemplateColumns = "1fr 1fr 1fr";
+			dimGrid.style.gap = "8px";
+			dimGrid.append(
+				h("div", {}, [h("div", { textContent: "dx" }), dxIn]),
+				h("div", {}, [h("div", { textContent: "dy" }), dyIn]),
+				h("div", {}, [h("div", { textContent: "dz" }), dzIn]),
+			);
+
+			const dimWrap = h("div");
+			dimWrap.style.marginTop = "10px";
+			dimWrap.append(
+				h("div", { textContent: "Dimensions (in cubes)" }),
+				dimGrid,
+			);
+
+			addPanel.append(
+				h("div", {
+					textContent: "Structure folders",
+					style: "margin-top:8px; font-weight:700",
+				}),
+				structurePath,
+				dimWrap,
+			);
+
+			// initial preview + live updates
+			onPreviewChange?.({ dims: readDims() });
+			const updatePreview = () => onPreviewChange?.({ dims: readDims() });
+			dxIn.addEventListener("input", updatePreview);
+			dyIn.addEventListener("input", updatePreview);
+			dzIn.addEventListener("input", updatePreview);
+		}
 
 		const warn = h("div", { textContent: "" });
 		warn.style.marginTop = "6px";
 		warn.style.opacity = "0.85";
 		warn.style.fontSize = "12px";
 
-		const addBtn = h("button", {
-			textContent: `Place ${kind.toUpperCase()}`,
-		});
-		styleButton(addBtn, "primary");
-		addBtn.style.marginTop = "10px";
+		function readAnchor() {
+			return clampToBounds({
+				x: Math.trunc(Number(x.value) || 0),
+				y: Math.trunc(Number(y.value) || 0),
+				z: Math.trunc(Number(z.value) || 0),
+			});
+		}
 
-		addBtn.onclick = () => {
-			const inputs = posInputsByKind.get(kind);
+		function placeAtAnchor(anchor) {
+			if (kind === "env") {
+				const folder = (structurePath?.value || "").trim();
+				const cubeName = (name.value || "Env Cube").trim();
 
-			const px = Math.trunc(Number(inputs.x.value) || 0);
-			const py = Math.trunc(Number(inputs.y.value) || 0);
-			const pz = Math.trunc(Number(inputs.z.value) || 0);
+				const dims = readDims();
+				const nx = dims.x,
+					ny = dims.y,
+					nz = dims.z;
 
-			const clamped = clampToBounds(px, py, pz);
+				let placed = 0;
+				let skipped = 0;
 
-			if (clamped.x !== px || clamped.y !== py || clamped.z !== pz) {
-				warn.textContent = `Clamped to (${clamped.x}, ${clamped.y}, ${clamped.z})`;
-			} else {
-				warn.textContent = "";
+				for (let ox = 0; ox < nx; ox++) {
+					for (let oy = 0; oy < ny; oy++) {
+						for (let oz = 0; oz < nz; oz++) {
+							const px = anchor.x + ox;
+							const py = anchor.y + oy;
+							const pz = anchor.z + oz;
+
+							if (!withinMap(px, py, pz)) {
+								skipped += 1;
+								continue;
+							}
+
+							state.objects.push(
+								createObject({
+									kind: "env",
+									name: cubeName,
+									pos: { x: px, y: py, z: pz },
+									color: color.value,
+									labelEnabled: labelEnabled.checked,
+									envSizeValue: 1,
+									hp: Number(hp.value),
+									hpMax: Number(hpMax.value),
+									structurePath: folder || null,
+								}),
+							);
+
+							placed += 1;
+						}
+					}
+				}
+
+				warn.textContent =
+					skipped > 0
+						? `Placed ${placed} cubes, skipped ${skipped} (out of bounds).`
+						: `Placed ${placed} cubes.`;
+
+				onChange?.();
+				return;
 			}
 
-			const obj = createObject({
-				kind,
-				name: name.value,
-				sizeKey: sizeSelect?.value,
-				envSizeValue: envSize?.value,
-				color: color.value,
-				pos: clamped,
-				labelEnabled: labelEnabled.checked,
-				hp: Number(hpBlock.hp.value),
-				hpMax: Number(hpBlock.hpMax.value),
-			});
+			const map = SIZE_MAPS[kind];
+			state.objects.push(
+				createObject({
+					kind,
+					name: name.value,
+					sizeKey: sizeSelect?.value,
+					color: color.value,
+					pos: anchor,
+					labelEnabled: labelEnabled.checked,
+					hp: Number(hp.value),
+					hpMax: Number(hpMax.value),
+				}),
+			);
 
-			state.objects.push(obj);
+			warn.textContent = "";
 			onChange?.();
-		};
+		}
 
-		const closeBtn = h("button", { textContent: "Done" });
-		styleButton(closeBtn);
-		closeBtn.style.marginTop = "8px";
-		closeBtn.onclick = () => setActiveAddKind(null);
+		const actions = h("div");
+		actions.style.display = "grid";
+		actions.style.gridTemplateColumns = "1fr 1fr";
+		actions.style.gap = "8px";
+		actions.style.marginTop = "10px";
+		actions.style.position = "sticky";
+		actions.style.bottom = "0";
+		actions.style.paddingTop = "8px";
+		actions.style.background =
+			"linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.55))";
+
+		const placeBtn = h("button", {
+			textContent:
+				kind === "env" ? "Place cubes" : `Place ${kind.toUpperCase()}`,
+		});
+		styleButton(placeBtn, "primary");
+		placeBtn.onclick = () => placeAtAnchor(readAnchor());
+
+		const doneBtn = h("button", { textContent: "Done" });
+		styleButton(doneBtn);
+		doneBtn.onclick = () => setActiveAddKind(null);
+
+		actions.append(placeBtn, doneBtn);
 
 		addPanel.append(header, name);
 
@@ -223,33 +331,46 @@ export function createAddPanel({
 			sLabel.style.marginTop = "8px";
 			addPanel.append(sLabel, sizeSelect);
 		}
-		if (envSize) {
-			const sLabel = h("div", { textContent: "Size (integer ≥ 1)" });
-			sLabel.style.marginTop = "8px";
-			addPanel.append(sLabel, envSize);
-		}
 
 		addPanel.append(
 			posLabel,
-			pos,
+			posRow,
 			labelRow,
 			colorRow,
-			hpBlock.row,
+			hpGrid,
 			warn,
-			addBtn,
-			closeBtn,
+			actions,
 		);
+
+		currentForm = {
+			setAnchorInputs: (cell) => {
+				const c = clampToBounds(cell);
+				x.value = String(c.x);
+				y.value = String(c.y);
+				z.value = String(c.z);
+				return c;
+			},
+			placeAt: (cell) => {
+				const anchor = clampToBounds(cell);
+				x.value = String(anchor.x);
+				y.value = String(anchor.y);
+				z.value = String(anchor.z);
+				placeAtAnchor(anchor);
+			},
+		};
 	}
 
 	function setActiveAddKind(kind) {
 		activeAddKind = kind;
-
 		const isAdding = Boolean(activeAddKind);
 		addPanel.style.display = isAdding ? "block" : "none";
 		onModeChange?.(isAdding);
 
 		if (isAdding) buildAddForm(activeAddKind);
-		else onPreviewChange?.({ sizeValue: 1 });
+		else {
+			currentForm = null;
+			onPreviewChange?.({ sizeValue: 1 });
+		}
 	}
 
 	btnAddPlayer.onclick = () => setActiveAddKind("player");
@@ -257,20 +378,15 @@ export function createAddPanel({
 	btnAddEnv.onclick = () => setActiveAddKind("env");
 
 	function setPlacementPosition(cell) {
-		if (!activeAddKind) return;
-		const inputs = posInputsByKind.get(activeAddKind);
-		if (!inputs) return;
+		if (!activeAddKind || !currentForm) return;
+		currentForm.setAnchorInputs(cell);
+	}
 
-		const c = clampToBounds(cell.x, cell.y, cell.z);
-		inputs.x.value = String(c.x);
-		inputs.y.value = String(c.y);
-		inputs.z.value = String(c.z);
+	function placeCurrentAtCell(cell) {
+		if (!activeAddKind || !currentForm) return;
+		currentForm.placeAt(cell);
 	}
 
 	const el = h("div", {}, [addButtonsHeader, btnRow, addPanel]);
-
-	return {
-		el,
-		setPlacementPosition,
-	};
+	return { el, setPlacementPosition, placeCurrentAtCell };
 }

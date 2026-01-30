@@ -57,7 +57,7 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 	dir.position.set(10, 20, 10);
 	scene.add(dir);
 
-	// Axes (kept outside the map)
+	// Axes helper (outside-ish)
 	const axesHelper = new THREE.AxesHelper(2.5);
 	axesHelper.position.set(-1, 0, -1);
 	scene.add(axesHelper);
@@ -71,7 +71,13 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 
 	// Mode + preview
 	const mode = { isAdding: false };
-	let placementPreviewSize = 1;
+
+	// Preview scale can be uniform number or dims {x,y,z}
+	let placementPreview = {
+		kind: "generic",
+		sizeValue: 1,
+		dims: { x: 1, y: 1, z: 1 },
+	};
 
 	// Scene modules
 	const cursor = createCursor(scene);
@@ -90,23 +96,48 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		onCellClick: (cell) => onCellClick?.(cell),
 	});
 
-	// Keep current objects reference for hover logic (and future validations)
-	let currentStateObjects = [];
-
 	function setMode(next) {
 		mode.isAdding = Boolean(next?.isAdding);
-
-		// Hide cursor when leaving add mode
-		if (!mode.isAdding) {
-			setCursorVisible(cursor, false);
-			placementPreviewSize = 1;
-			setCursorScale(cursor, 1);
-		}
+		if (!mode.isAdding) setCursorVisible(cursor, false);
 	}
 
-	function setPlacementPreview({ sizeValue }) {
-		placementPreviewSize = Math.max(1, Number(sizeValue) || 1);
-		setCursorScale(cursor, placementPreviewSize);
+	/**
+	 * For player/enemy: { sizeValue: number }
+	 * For env structures: { dims: {x,y,z} }
+	 */
+	function setPlacementPreview(next = {}) {
+		if (Number.isFinite(next.sizeValue)) {
+			const s = Math.max(1, Math.trunc(Number(next.sizeValue) || 1));
+			placementPreview = {
+				kind: "uniform",
+				sizeValue: s,
+				dims: { x: s, y: s, z: s },
+			};
+			setCursorScale(cursor, s);
+			return;
+		}
+
+		if (next.dims) {
+			const dx = Math.max(1, Math.trunc(Number(next.dims.x) || 1));
+			const dy = Math.max(1, Math.trunc(Number(next.dims.y) || 1));
+			const dz = Math.max(1, Math.trunc(Number(next.dims.z) || 1));
+
+			placementPreview = {
+				kind: "env",
+				sizeValue: 1,
+				dims: { x: dx, y: dy, z: dz },
+			};
+			setCursorScale(cursor, { x: dx, y: dy, z: dz });
+			return;
+		}
+
+		// fallback
+		placementPreview = {
+			kind: "generic",
+			sizeValue: 1,
+			dims: { x: 1, y: 1, z: 1 },
+		};
+		setCursorScale(cursor, 1);
 	}
 
 	function setMapSize(next) {
@@ -114,7 +145,6 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 
 		setGrid(scene, gridLinesRef, mapSize);
 
-		// Aim controls at the center of the map
 		controls.target.set(
 			(mapSize.sizeX - 1) / 2,
 			0,
@@ -124,7 +154,6 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 	}
 
 	function renderFromState(state) {
-		currentStateObjects = state.objects;
 		setMapSize({
 			sizeX: state.map.sizeX,
 			sizeY: state.map.sizeY,
@@ -146,24 +175,27 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 			return;
 		}
 
-		// anchor-based preview center
-		const s = placementPreviewSize;
-		const cx = cell.x + (s - 1) / 2;
-		const cy = cell.y + s / 2 + 0.01;
-		const cz = cell.z + (s - 1) / 2;
+		const dx = placementPreview.dims.x;
+		const dy = placementPreview.dims.y;
+		const dz = placementPreview.dims.z;
+
+		// Center the preview box so that its "min corner" is at the hovered cell (anchor),
+		// and it extends into +x/+y/+z.
+		const cx = cell.x + (dx - 1) / 2;
+		const cy = cell.y + dy / 2 + 0.01; // slight lift avoids z-fighting
+		const cz = cell.z + (dz - 1) / 2;
 
 		setCursorPosition(cursor, { x: cx, y: cy, z: cz });
 		setCursorVisible(cursor, true);
 	}
 
-	// Hover label update (disabled during add mode)
+	// Hover labels update (disabled while adding)
 	function updateHover() {
 		if (mode.isAdding) {
 			objects.setHovered(null, true);
 			return;
 		}
 
-		// pointer invalid/outside (our picking sets huge values)
 		if (picking.pointerNDC.x > 10 || picking.pointerNDC.y > 10) {
 			objects.setHovered(null, false);
 			return;
@@ -181,7 +213,7 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		objects.setHovered(hits[0].object, false);
 	}
 
-	// --- Click selection (cube -> object id) ---
+	// Click selection (cube -> object id), only when NOT adding
 	let downPos = null;
 	const CLICK_MOVE_TOLERANCE_PX = 6;
 
@@ -198,17 +230,12 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		const dy = e.clientY - downPos.y;
 		downPos = null;
 
-		// Prevent orbit-drag counting as click
 		if (Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE_PX) return;
-
-		// Don't select while adding (placing)
 		if (mode.isAdding) return;
 
 		const rect = renderer.domElement.getBoundingClientRect();
 		const x = e.clientX - rect.left;
 		const y = e.clientY - rect.top;
-
-		// Must be inside canvas
 		if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
 
 		const ndcX = (x / rect.width) * 2 - 1;
@@ -235,7 +262,7 @@ export function createSceneApp({ onCellClick, onObjectClick } = {}) {
 		labelRenderer.setSize(window.innerWidth, window.innerHeight);
 	});
 
-	// Animation loop
+	// Loop
 	function animate() {
 		requestAnimationFrame(animate);
 		controls.update();
